@@ -1,0 +1,263 @@
+<title>Wearable APS Sim</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<!-- @css src/styles.css -->
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Wearable threat-warning and protection · parts simulator</div>
+      <h1>Wearable APS Sim</h1>
+      <p class="lede">Choose parts from the library for every slot: sensors, compute, controller, actuators, pneumatics and protective element. The sim fires randomised threats at the wearer and shows where the chain breaks. The trade study sweeps whole slots of the library so you can compare dozens of stacks at once.</p>
+    </div>
+    <div class="status-strip" id="statusStrip"></div>
+  </header>
+
+  <nav class="secnav" aria-label="Sections">
+    <a href="#build"><b>1</b>Build</a>
+    <a href="#coverage"><b>2</b>Coverage</a>
+    <a href="#engage"><b>3</b>One round</a>
+    <a href="#perf"><b>4</b>Scenario</a>
+    <a href="#trade"><b>5</b>Trade study</a>
+    <a href="#compare"><b>6</b>Saved builds</a>
+    <a href="#library"><b>7</b>Parts library</a>
+    <a href="#model"><b>8</b>Model</a>
+  </nav>
+
+  <!-- ===================== BUILD ===================== -->
+  <section class="block" id="build">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Build</div>
+        <h2>Put a stack on the wearer</h2>
+        <p>Every slot draws from the parts library. Ratings are final-product suitability out of 10; "est." marks planning values still to be replaced with measured numbers.</p>
+      </div>
+      <div class="btnrow">
+        <span class="mono muted" id="buildName"></span>
+        <button class="btn" type="button" id="btnResetBuild">Reset to baseline</button>
+        <a class="btn" href="#compare">Save or compare builds</a>
+      </div>
+    </div>
+    <div class="bench">
+      <form class="rail" id="buildRail" autocomplete="off"></form>
+      <div class="stage sticky">
+        <div class="viewport" id="viewport">
+          <div class="vp-hud">
+            <span class="chip" id="hudThreat"><i></i>—</span>
+            <span class="chip" id="hudState"><i></i>Idle</span>
+          </div>
+          <div class="vp-tools">
+            <button class="btn" type="button" id="btnFov" aria-pressed="true">Hide fields of view</button>
+            <button class="btn" type="button" id="btnView">Top view</button>
+            <button class="btn primary" type="button" id="btnFire">Fire test round</button>
+          </div>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+        <div class="gauges" id="gauges"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Added mass</h3><span class="mono" id="massTotal"></span></div>
+      <div class="massbar" id="massBar"></div>
+      <div class="masslegend" id="massLegend"></div>
+    </div>
+    <div class="cols2">
+      <div class="panel">
+        <div class="panel-head"><h3>Readiness by slot</h3><span class="mono" id="readySummary"></span></div>
+        <div class="tbl-wrap"><table id="readyTbl"></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Configuration checks</h3><span class="mono" id="issueCount"></span></div>
+        <ul class="issues" id="issues"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== COVERAGE ===================== -->
+  <section class="block" id="coverage">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Coverage</div>
+        <h2>Which directions are watched</h2>
+        <p>Every direction around the wearer, from 40° below the horizon to 80° above. Shading counts the camera pods that see each direction after body and pack occlusion; violet marks radar cover. Hover for detail.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cov-wrap"><canvas id="covCanvas" role="img" aria-label="Coverage map by azimuth and elevation"></canvas><div class="tip" id="covTip" hidden></div></div>
+      <div class="legendrow" id="covLegend" style="margin-top:10px"></div>
+      <div class="covstats" id="covStats"></div>
+    </div>
+  </section>
+
+  <!-- ===================== ENGAGEMENT ===================== -->
+  <section class="block" id="engage">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">One round</div>
+        <h2>Frame by frame, cue to mechanism</h2>
+        <p>One shot against the current build. Tick height is the chance each frame detects the round; filled ticks are detections. The response row shows the driver, slew and deploy times starting from the alert.</p>
+      </div>
+    </div>
+    <div class="engage">
+      <form class="rail" id="shotRail" autocomplete="off"></form>
+      <div class="panel" style="min-width:0">
+        <div class="tl-wrap"><svg id="timeline" viewBox="0 0 900 230" role="img" aria-label="Engagement timeline"></svg></div>
+        <div class="results" id="shotResults"></div>
+        <div class="verdict" id="shotVerdict"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SCENARIO PERFORMANCE ===================== -->
+  <section class="block" id="perf">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Scenario</div>
+        <h2>How the build does across many rounds</h2>
+        <p>Randomised distance, bearing, elevation, aim point and frame phase for every threat in the mix. Each round ends in one outcome, so the bars show exactly where the chain breaks.</p>
+      </div>
+      <span class="mono muted" id="perfMeta"></span>
+    </div>
+    <div class="perf">
+      <form class="rail" id="scenRail" autocomplete="off"></form>
+      <div class="perf-main">
+        <div class="panel tbl-wrap"><table id="perfTbl"></table><div class="legendrow" id="outLegend" style="margin-top:10px"></div></div>
+        <div class="mc2">
+          <div class="panel hist">
+            <div class="panel-head"><h3 id="histTitle">Warning time</h3><span class="mono" id="histSub"></span></div>
+            <svg id="hist" viewBox="0 0 600 250" role="img" aria-label="Warning time histogram"></svg>
+          </div>
+          <div class="panel">
+            <h3 style="margin-bottom:8px">Where the chain breaks</h3>
+            <div class="reading" id="perfText"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TRADE STUDY ===================== -->
+  <section class="block" id="trade">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Trade study</div>
+        <h2>Sweep the library</h2>
+        <p>Tick the parts to try in each slot. Every combination is built on top of the current build and run through the scenario. Points on the dashed front can't be beaten on both axes at once.</p>
+      </div>
+    </div>
+    <div class="trade">
+      <form class="rail" id="tradeRail" autocomplete="off"></form>
+      <div class="perf-main">
+        <div class="panel scatter">
+          <div class="panel-head"><h3>Objective against burden</h3><span class="mono" id="tradeMeta">Not run yet</span></div>
+          <div class="progress" id="tradeProg" hidden><div></div></div>
+          <svg id="tradePlot" viewBox="0 0 720 320" role="img" aria-label="Trade study scatter"></svg>
+          <div class="tip" id="tradeTip" hidden></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Ranked combinations</h3><div class="btnrow"><button class="btn small" type="button" id="btnTradeCsv" disabled>Copy CSV</button></div></div>
+          <div class="tbl-wrap"><table id="tradeTbl"></table></div>
+          <textarea id="tradeCsv" rows="6" hidden aria-label="Trade study CSV"></textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SAVED BUILDS ===================== -->
+  <section class="block" id="compare">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Saved builds</div>
+        <h2>Compare builds side by side</h2>
+        <p>Builds are kept in this browser. Each column runs the current scenario with 300 rounds per threat.</p>
+      </div>
+      <form class="btnrow" id="saveForm" autocomplete="off">
+        <input type="text" id="saveName" placeholder="Name this build" style="width:220px" aria-label="Build name">
+        <button class="btn primary" type="submit">Save current build</button>
+      </form>
+    </div>
+    <div class="panel tbl-wrap"><table id="cmpTbl"></table></div>
+  </section>
+
+  <!-- ===================== LIBRARY ===================== -->
+  <section class="block" id="library">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Parts library</div>
+        <h2>Every candidate part, rated</h2>
+        <p>Add, edit or duplicate parts and threats. Changes stay in this browser; copy the JSON to share them with the team or commit them to <code>sim/src/catalog.js</code>.</p>
+      </div>
+      <div class="btnrow"><button class="btn primary" type="button" id="btnNewPart">Add part</button></div>
+    </div>
+    <div class="tabs" id="libTabs" role="tablist" aria-label="Library categories"></div>
+    <div class="panel editor" id="editor" hidden></div>
+    <div class="libgrid" id="libGrid"></div>
+    <div class="panel io">
+      <div class="panel-head"><h3>Share library changes</h3><span class="mono" id="libCount"></span></div>
+      <div class="cols2">
+        <div style="display:grid;gap:8px">
+          <p class="note">Your edits and new parts as JSON. Paste it into a teammate's sim, or merge it into the catalogue file.</p>
+          <textarea id="libJson" rows="8" aria-label="Library JSON"></textarea>
+          <div class="btnrow">
+            <button class="btn" type="button" id="btnCopyLib">Copy changes</button>
+            <button class="btn" type="button" id="btnCopyFull">Copy full library</button>
+            <button class="btn" type="button" id="btnApplyLib">Apply pasted JSON</button>
+            <label class="btn" for="libFile">Load .json file</label>
+            <input type="file" id="libFile" accept=".json,application/json" hidden>
+          </div>
+          <div class="toast" id="libToast" role="status"></div>
+        </div>
+        <div style="display:grid;gap:8px;align-content:start">
+          <p class="note">Reset removes every edit, new part and deleted-part marker in this browser and restores the built-in catalogue.</p>
+          <div class="btnrow"><button class="btn danger" type="button" id="btnResetLib">Reset library to defaults</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MODEL ===================== -->
+  <section class="block" id="model">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Model</div>
+        <h2>What the sim computes and what it leaves out</h2>
+      </div>
+    </div>
+    <div class="cols2">
+      <div class="panel">
+        <h3 style="margin-bottom:10px">Detection and cueing</h3>
+        <ul class="assume">
+          <li><b>Flight.</b> Constant-Cd quadratic drag in closed form: <code>v(s) = v0·e^(−s/L)</code>, <code>L = 2m / (ρ·Cd·A)</code>. Rockets and drones fly at constant speed. Gravity drop and yaw are ignored over the last few hundred metres.</li>
+          <li><b>Camera signal.</b> The round is a point target. Signal-to-noise per frame is <code>contrast × pixel fill × peak-pixel energy ÷ σ</code>, with pixel fill <code>(π/4)(d / (R·IFOV))²</code> capped at 1, divided by <code>1 + smear</code> for angular motion during the exposure, and for thermal cores by the bolometer lag <code>1 + τ·2v/R</code>.</li>
+          <li><b>Noise.</b> Visible sensors are photon-limited: <code>σ = noise × (f/2) ÷ √(light × exposure / 0.1 ms)</code>. Frame differencing leaves clutter in proportion to how far the background moves between frames after ego-motion compensation. Thermal noise is light-independent.</li>
+          <li><b>Detection and false alarms.</b> Per-frame detection probability is <code>Φ(SNR − k)</code>. A track confirms after M detections in N frames. Noise false alarms per hour are <code>pixels × rate × Q(k) × C(N−1, M−1) × (9·Q(k))^(M−1)</code>. Clutter movers such as birds, insects and rain are not modelled.</li>
+          <li><b>Event cameras</b> sample at their pixel latency (longer in low light), and their threshold maps to <code>k = 5</code>. Ego-motion drives the event rate and the compute load.</li>
+          <li><b>Bandwidth and compute</b> throttle the frame rate when either is exceeded. MIPI pods beyond the host's CSI ports are dropped. Latency is half the exposure, plus camera output, transfer, processing, fusion and controller.</li>
+          <li><b>Radar.</b> Range scales as <code>R_ref × σ^¼</code>. A waveform not built for ballistic targets loses coherent gain when the round crosses a range bin faster than a chirp loop: <code>N_eff = ΔR ÷ (v × T_loop)</code>. Per-look Pd follows the R⁻⁴ law with 3 dB fluctuation. Chronographs report afterwards and give no bearing.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:10px">Response, burden and readiness</h3>
+        <ul class="assume">
+          <li><b>Response chain.</b> Alert, then driver latency, then slew to the cued bearing (dead time + angle ÷ speed, with an acceleration limit for steppers, slowed by gear reduction, limited by frame travel), then deployment.</li>
+          <li><b>Pneumatic deployment.</b> Valve and line delays, then <code>t = √(2·standoff ÷ a)</code> with <code>a = P·A_bore ÷ (element + carriage)</code>. Actuator deployment uses stroke ÷ speed, or a 90° swing for rotary parts, and checks force against the element's weight.</li>
+          <li><b>Geometry.</b> Aim points spread over torso and head. The element is a flat plate at the standoff, pointed with cue bearing error plus actuator, frame and backlash error. Elevation shifts the crossing point. It protects only if the path crosses it and its level meets the threat's.</li>
+          <li><b>Mass and balance.</b> Each item is placed on the body for head-borne mass and centre-of-mass shift against a 105 kg wearer with kit. Battery mass follows the chosen cell chemistry.</li>
+          <li><b>Power.</b> Running power of sensors, compute and controller, plus idle or holding power of actuators and compressor duty, then 10% conversion loss and 90% usable capacity.</li>
+          <li><b>Readiness.</b> The weakest rated part sets system readiness, as with TRL. Unrated parts are listed, not scored.</li>
+          <li><b>Validation hook.</b> ANCILE reported 28.6 ± 8.3% interception of foam darts at 5–20 m/s, reliable at ≤ 7.5 m/s. Load the ANCILE example, set bearings to Bench and include the foam-dart threat to compare.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <p class="foot">Planning tool only. None of these parts has been shown to detect small-arms projectiles reliably in a wearable package. Results are the upper bound a simple optical and radar model allows; use them to steer bench tests, not to replace them. Library edits and saved builds live only in this browser.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<!-- @js src/catalog.js -->
+<!-- @js src/engine.js -->
+<!-- @app src/ui/core.js src/ui/scene.js src/ui/build.js src/ui/views.js src/ui/trade.js src/ui/library.js src/ui/main.js -->
