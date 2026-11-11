@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Wearable APS Sim</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: test-range instrument console. Config rail + live 3D bench on top, engagement trace, then the study tables. */
+:root {
+  --bg: #e9ece5;
+  --surface: #f7f8f4;
+  --surface-2: #dfe3d9;
+  --ink: #1a201b;
+  --muted: #586356;
+  --line: #c6cdc0;
+  --accent: #b86200;      /* signal amber: our hardware, alerts */
+  --sensor: #2b6a8a;      /* camera field of view */
+  --radar: #7a4fa3;       /* radar field of view */
+  --ok: #2e7d4f;
+  --warn: #a8700f;
+  --bad: #b3261e;
+  --view-bg: #dde2d6;
+  --body-skin: #a9b0a2;
+  --kit: #6b745f;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111511; --surface: #191e19; --surface-2: #222922; --ink: #e1e7dc; --muted: #93a08f; --line: #2d362d;
+    --accent: #f0a23b; --sensor: #6cb2d8; --radar: #b18ce0; --ok: #5cc48a; --warn: #e3b04b; --bad: #ef6b5e;
+    --view-bg: #0c0f0c; --body-skin: #5d655a; --kit: #3f4a3a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111511; --surface: #191e19; --surface-2: #222922; --ink: #e1e7dc; --muted: #93a08f; --line: #2d362d;
+  --accent: #f0a23b; --sensor: #6cb2d8; --radar: #b18ce0; --ok: #5cc48a; --warn: #e3b04b; --bad: #ef6b5e;
+  --view-bg: #0c0f0c; --body-skin: #5d655a; --kit: #3f4a3a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+.wrap { max-width: 1320px; margin: 0 auto; display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: 0.01em; }
+h1 { font-size: 30px; font-weight: 700; }
+h2 { font-size: 21px; font-weight: 600; }
+h3 { font-size: 15px; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+.eyebrow { font-family: var(--font-data); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.mono, .num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+header.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px 24px; padding-block: 24px 4px; border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+header.top .lede { color: var(--muted); max-width: 64ch; margin-top: 6px; }
+.status-strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 11.5px; padding: 3px 9px; border-radius: 3px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.chip.ok i { background: var(--ok); } .chip.warn i { background: var(--warn); } .chip.bad i { background: var(--bad); }
+
+.bench { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.rail { display: grid; gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 16px; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 10px; }
+legend { font-family: var(--font-data); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; padding: 0; }
+label.f { display: grid; gap: 4px; font-size: 13px; }
+label.f > span { display: flex; justify-content: space-between; gap: 8px; }
+label.f > span b { font-family: var(--font-data); font-weight: 500; color: var(--accent); }
+select, input[type="number"] { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); color: var(--ink); width: 100%; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.seg button { font: inherit; font-size: 12.5px; padding: 6px 4px; border: 0; background: var(--bg); color: var(--ink); cursor: pointer; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stage { display: grid; gap: 14px; min-width: 0; }
+.viewport { position: relative; height: 520px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--view-bg); }
+@media (max-width: 600px) { .viewport { height: 400px; } }
+.viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.vp-hud { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; flex-wrap: wrap; }
+.vp-hud .chip { pointer-events: auto; }
+.vp-tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.btn { font: inherit; font-size: 12.5px; font-weight: 500; padding: 7px 12px; border-radius: 3px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--ink); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] .btn.primary { color: #1a1206; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #1a1206; } }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); padding: 6px 9px; border-radius: 3px; font-size: 12px; max-width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+.tip b { font-family: var(--font-display); font-size: 13px; display: block; }
+.tip span { font-family: var(--font-data); color: var(--muted); font-size: 11px; }
+
+.gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.gauge { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; display: grid; gap: 2px; align-content: start; }
+.gauge .v { font-family: var(--font-data); font-size: 21px; font-variant-numeric: tabular-nums; }
+.gauge .v small { font-size: 12px; color: var(--muted); margin-left: 3px; }
+.gauge .s { font-size: 11.5px; color: var(--muted); }
+.gauge .bar { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.gauge .bar > div { height: 100%; background: var(--ok); }
+.gauge.warn .bar > div { background: var(--warn); } .gauge.bad .bar > div { background: var(--bad); }
+.gauge.warn .v { color: var(--warn); } .gauge.bad .v { color: var(--bad); }
+
+.massbar { display: flex; height: 22px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
+.massbar div { height: 100%; min-width: 2px; }
+.masslegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin-top: 8px; }
+.masslegend span { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.masslegend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.masslegend em { font-style: normal; font-family: var(--font-data); color: var(--muted); }
+
+section.block { display: grid; gap: 14px; }
+.block-head { display: flex; justify-content: space-between; align-items: end; flex-wrap: wrap; gap: 8px 20px; border-top: 1px solid var(--line); padding-top: 18px; }
+.block-head p { color: var(--muted); margin-top: 4px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 16px; min-width: 0; }
+.engage { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .engage { grid-template-columns: minmax(0, 1fr); } }
+.tl-wrap { overflow-x: auto; }
+.tl-wrap svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.results { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 14px; }
+.results .gauge .v { font-size: 18px; }
+.verdict { margin-top: 14px; padding: 12px 14px; border-left: 3px solid var(--muted); background: var(--surface-2); border-radius: 0 3px 3px 0; font-size: 13.5px; }
+.verdict.ok { border-color: var(--ok); } .verdict.warn { border-color: var(--warn); } .verdict.bad { border-color: var(--bad); }
+
+.mc { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .mc { grid-template-columns: minmax(0, 1fr); } }
+.hist svg { width: 100%; height: auto; display: block; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-family: var(--font-data); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td.n, th.n { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+tr.best td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+tr.current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+small.med { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.pct { display: inline-block; min-width: 46px; padding: 1px 6px; border-radius: 2px; text-align: right; }
+.pct.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.pct.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.pct.bad { background: color-mix(in srgb, var(--bad) 16%, transparent); }
+
+.parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1000px) { .parts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .parts { grid-template-columns: minmax(0, 1fr); } }
+.part { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px; display: grid; gap: 8px; align-content: start; }
+.part dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; }
+.part dt { color: var(--muted); }
+.part dd { margin: 0; font-family: var(--font-data); text-align: right; }
+.part .role { font-size: 12.5px; color: var(--muted); }
+.part .tag { font-family: var(--font-data); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+
+.cols2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .cols2 { grid-template-columns: minmax(0, 1fr); } }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+ol.steps li { padding-left: 4px; }
+ul.assume { margin: 0; padding-left: 18px; display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+ul.assume b { color: var(--ink); font-weight: 500; }
+.foot { color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Wearable threat-warning demonstrator · bench simulator</div>
+      <h1>Wearable APS Sim</h1>
+      <p class="lede">Put the candidate camera, compute, radar and controller stack on a soldier, see the mass and power cost, then fire simulated rounds at it to find out how much warning each configuration actually buys.</p>
+    </div>
+    <div class="status-strip" id="statusStrip"></div>
+  </header>
+
+  <!-- ===================== BENCH ===================== -->
+  <div class="bench">
+    <form class="rail" id="cfgForm" autocomplete="off">
+      <fieldset>
+        <legend>Sensors</legend>
+        <label class="f"><span>Camera</span>
+          <select id="cam">
+            <option value="xiq500">XIMEA xiQ · VGA @ 500 fps</option>
+            <option value="xiq1000">XIMEA xiQ · ROI @ 1000 fps</option>
+            <option value="daheng">Daheng MER2-160 · 1.6 MP @ 227 fps</option>
+          </select>
+        </label>
+        <label class="f"><span>Number of camera pods <b id="countOut">4</b></span>
+          <input type="range" id="count" min="1" max="6" step="1" value="4">
+        </label>
+        <label class="f"><span>Lens horizontal field of view</span>
+          <div class="seg" id="lensSeg" role="group" aria-label="Lens">
+            <button type="button" data-v="wide" aria-pressed="true">100°</button>
+            <button type="button" data-v="std" aria-pressed="false">70°</button>
+            <button type="button" data-v="narrow" aria-pressed="false">40°</button>
+          </div>
+        </label>
+        <label class="f"><span>Pod mounting</span>
+          <div class="seg" id="mountSeg" role="group" aria-label="Mounting">
+            <button type="button" data-v="helmet" aria-pressed="false">Helmet</button>
+            <button type="button" data-v="shoulder" aria-pressed="true">Shoulders</button>
+            <button type="button" data-v="vest" aria-pressed="false">Vest</button>
+          </div>
+        </label>
+        <label class="check"><input type="checkbox" id="radar" checked> TI IWR6843AOP radar (chest)</label>
+      </fieldset>
+      <fieldset>
+        <legend>Processing &amp; power</legend>
+        <label class="f"><span>Compute</span>
+          <select id="compute">
+            <option value="orin15">Jetson Orin Nano Super · 15 W mode</option>
+            <option value="orin25">Jetson Orin Nano Super · 25 W MAXN</option>
+            <option value="pi5">Raspberry Pi 5 (baseline)</option>
+          </select>
+        </label>
+        <label class="f"><span>Battery capacity <b id="battOut">99 Wh</b></span>
+          <input type="range" id="batt" min="20" max="200" step="1" value="99">
+        </label>
+        <label class="f"><span>Response module placeholder <b id="effOut">0.0 kg</b></span>
+          <input type="range" id="eff" min="0" max="4" step="0.1" value="0">
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Detection model</legend>
+        <label class="f"><span>Target contrast vs background <b id="contrastOut">0.60</b></span>
+          <input type="range" id="contrast" min="0.1" max="1" step="0.05" value="0.6">
+        </label>
+        <label class="f"><span>Detection threshold (pixel fill) <b id="threshOut">0.15</b></span>
+          <input type="range" id="thresh" min="0.05" max="0.5" step="0.01" value="0.15">
+        </label>
+        <label class="f"><span>Frames to confirm a track <b id="confirmOut">3</b></span>
+          <input type="range" id="confirm" min="1" max="6" step="1" value="3">
+        </label>
+      </fieldset>
+    </form>
+
+    <div class="stage">
+      <div class="viewport" id="viewport">
+        <div class="vp-hud">
+          <span class="chip" id="hudThreat"><i></i>—</span>
+          <span class="chip" id="hudState"><i></i>Idle</span>
+        </div>
+        <div class="vp-tools">
+          <button class="btn" type="button" id="btnFov" aria-pressed="true">Hide fields of view</button>
+          <button class="btn" type="button" id="btnView">Top view</button>
+          <button class="btn primary" type="button" id="btnFire">Fire test round</button>
+        </div>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <div class="gauges" id="gauges"></div>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <h3>Added mass breakdown</h3>
+          <span class="mono" style="font-size:12px;color:var(--muted)" id="massTotal"></span>
+        </div>
+        <div class="massbar" id="massBar"></div>
+        <div class="masslegend" id="massLegend"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ENGAGEMENT ===================== -->
+  <section class="block">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Single engagement</div>
+        <h2>One round, frame by frame</h2>
+        <p>Pick a threat and a geometry. The trace shows when the round becomes resolvable, which frames see it, when the track confirms, when the alert leaves the Teensy, and when it arrives.</p>
+      </div>
+    </div>
+    <div class="engage">
+      <form class="rail" id="shotForm" autocomplete="off">
+        <fieldset>
+          <legend>Threat</legend>
+          <label class="f"><span>Projectile</span><select id="threat"></select></label>
+          <label class="f"><span>Firing distance <b id="r0Out">150 m</b></span>
+            <input type="range" id="r0" min="5" max="600" step="1" value="150"></label>
+          <label class="f"><span>Bearing from wearer's front <b id="azOut">30°</b></span>
+            <input type="range" id="az" min="-180" max="180" step="1" value="30"></label>
+          <label class="f"><span>Elevation <b id="elOut">5°</b></span>
+            <input type="range" id="el" min="-30" max="30" step="1" value="5"></label>
+          <label class="f"><span>Frame clock phase <b id="phOut">0.50</b></span>
+            <input type="range" id="ph" min="0" max="0.99" step="0.01" value="0.5"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Trace window</legend>
+          <div class="seg" id="tlSeg" role="group" aria-label="Trace window">
+            <button type="button" data-v="final" aria-pressed="true">Final approach</button>
+            <button type="button" data-v="full" aria-pressed="false">Whole flight</button>
+          </div>
+        </fieldset>
+      </form>
+      <div class="panel" style="min-width:0">
+        <div class="tl-wrap"><svg id="timeline" viewBox="0 0 900 190" role="img" aria-label="Engagement timeline"></svg></div>
+        <div class="results" id="shotResults"></div>
+        <div class="verdict" id="shotVerdict"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MONTE CARLO ===================== -->
+  <section class="block">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Monte Carlo study</div>
+        <h2>Which stack is best?</h2>
+        <p>Each row fires 1,500 randomised rounds per threat (distance, bearing, elevation and frame phase drawn at random) at the current pod count, lens, mounting and radar setting, swapping only camera and compute. Cells show the share of rounds giving at least the required warning, with the median warning underneath.</p>
+      </div>
+      <label class="f" style="min-width:220px"><span>Warning needed before impact <b id="needOut">5 ms</b></span>
+        <input type="range" id="need" min="0" max="300" step="1" value="5"></label>
+    </div>
+    <div class="panel tbl-wrap"><table id="rankTbl"></table></div>
+    <div class="mc">
+      <div class="panel hist">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+          <h3 id="histTitle">Warning time distribution</h3>
+          <span class="mono" style="font-size:12px;color:var(--muted)" id="histSub"></span>
+        </div>
+        <svg id="hist" viewBox="0 0 560 240" role="img" aria-label="Warning time histogram"></svg>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:8px">Reading the result</h3>
+        <div id="mcText" style="display:grid;gap:10px;font-size:13.5px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PARTS ===================== -->
+  <section class="block">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Bill of materials</div>
+        <h2>Candidate parts</h2>
+        <p>Figures from your shortlist. Mass and power marked "est." are planning values for this sim, not vendor numbers; replace them as you weigh real hardware.</p>
+      </div>
+    </div>
+    <div class="parts" id="parts"></div>
+  </section>
+
+  <section class="block">
+    <div class="cols2">
+      <div class="panel">
+        <div class="eyebrow" style="margin-bottom:6px">Concept of use</div>
+        <h2 style="margin-bottom:12px">How a wearer would run it</h2>
+        <ol class="steps">
+          <li><b>Kit up.</b> Pods clip to helmet rails, shoulder straps or the plate carrier. Compute and battery ride in a rear pouch; one USB3 harness per pod runs down the carrier.</li>
+          <li><b>Power on and self-test.</b> The Teensy checks each camera heartbeat, radar link and battery state, then shows a green status LED.</li>
+          <li><b>Background model.</b> The Jetson learns a few seconds of static scene per pod so frame differencing can pick out fast movers.</li>
+          <li><b>Watch.</b> Every pod streams at full rate. A candidate is anything resolvable that grows or moves between frames; the radar adds an independent close-range cue in front.</li>
+          <li><b>Confirm and cue.</b> After the confirm count is met, the Jetson sends a bearing to the Teensy, which drives a haptic buzz and LED in the direction of the threat and timestamps the event.</li>
+          <li><b>Log and review.</b> Raw frames around every event are kept for after-action review and for building the training set the detector currently lacks.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <div class="eyebrow" style="margin-bottom:6px">Model assumptions</div>
+        <h2 style="margin-bottom:12px">What this sim simplifies</h2>
+        <ul class="assume">
+          <li><b>Camera detection</b> needs the round to fill a set fraction of one pixel (diameter × contrast ÷ pixel angle ≥ threshold), then be seen in N consecutive frames.</li>
+          <li><b>Rounds fly straight at constant speed</b> toward the torso. Drag, yaw and muzzle-flash cues are ignored.</li>
+          <li><b>Bandwidth and compute limits</b> throttle the frame rate when exceeded: usable USB3 is 8 Gbps on the Orin dev kit and 4 Gbps on the Pi 5; classical detection throughput is 1,100 / 1,800 / 150 Mpixel/s for Orin 15 W, Orin 25 W and Pi 5.</li>
+          <li><b>Latency</b> after the confirming frame = 0.1 ms exposure + USB transfer + per-frame processing + 0.05 ms Teensy output.</li>
+          <li><b>Radar range</b> scales with radar cross-section to the ¼ power from 15 m on a 1 m² target, at 30 frames/s, ±60° in front, with 10 ms processing. Bullet speeds are far past its unambiguous Doppler limit (≈21 m/s), so it can at best flag presence.</li>
+          <li><b>Mass</b> includes lens, housing and harness per pod, a compute enclosure, and Li-ion at 150 Wh/kg.</li>
+          <li><b>RPG-type rocket</b> is included as a reference point: it is the class of threat vehicle active protection systems are actually built against.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <p class="foot">Planning tool only. None of these parts has been shown to detect small-arms projectiles reliably; results here are the upper bound a simple optical and radar model allows, and are meant to steer bench tests, not replace them.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+"use strict";
+const D2R = Math.PI / 180;
+
+/* ------------------------------------------------------------------ data */
+const CAMS = {
+  xiq500:  { name: "XIMEA xiQ · VGA 500 fps", short: "xiQ VGA 500", hres: 648, vres: 488, fps: 500, mass: 0.027, power: 1.0, cost: 313, dims: [0.0264, 0.0264, 0.026] },
+  xiq1000: { name: "XIMEA xiQ · ROI 1000 fps", short: "xiQ ROI 1000", hres: 648, vres: 240, fps: 1000, mass: 0.027, power: 1.0, cost: 313, dims: [0.0264, 0.0264, 0.026] },
+  daheng:  { name: "Daheng MER2-160-227U3M", short: "MER2-160", hres: 1440, vres: 1080, fps: 227, mass: 0.065, power: 2.7, cost: 240, dims: [0.029, 0.029, 0.029] },
+};
+const LENSES = { wide: { hfov: 100, mass: 0.030 }, std: { hfov: 70, mass: 0.032 }, narrow: { hfov: 40, mass: 0.038 } };
+const COMPUTE = {
+  orin15: { name: "Jetson Orin Nano Super (15 W)", short: "Orin 15 W", mass: 0.180, power: 15, cost: 384.48, bw: 8, pix: 1100e6, lat: 2.0 },
+  orin25: { name: "Jetson Orin Nano Super (25 W)", short: "Orin 25 W", mass: 0.180, power: 25, cost: 384.48, bw: 8, pix: 1800e6, lat: 1.5 },
+  pi5:    { name: "Raspberry Pi 5", short: "Pi 5", mass: 0.070, power: 8, cost: 85, bw: 4, pix: 150e6, lat: 6.0 },
+};
+const RADAR = { mass: 0.030, power: 2.0, cost: 160, fps: 30, rRef: 15, proc: 10, fovHalf: 60, vmax: 21 };
+const TEENSY = { mass: 0.008, power: 0.5, cost: 41.30, lat: 0.05 };
+const POD_EXTRA = 0.020, HARNESS = 0.030, ENCLOSURE = 0.080, WH_PER_KG = 150, EXPOSURE_MS = 0.1;
+
+const THREATS = [
+  { id: "9mm",   name: "9×19 mm pistol",       short: "9 mm",       v: 360, d: 0.0090, rmin: 5,   rmax: 50,   def: 15,  bullet: true },
+  { id: "556",   name: "5.56×45 mm rifle",     short: "5.56",     v: 940, d: 0.0057, rmin: 25,  rmax: 400,  def: 150, bullet: true },
+  { id: "762r",  name: "7.62×39 mm rifle",     short: "7.62×39",     v: 715, d: 0.0079, rmin: 25,  rmax: 300,  def: 100, bullet: true },
+  { id: "762n",  name: "7.62×51 mm rifle",     short: "7.62×51",     v: 840, d: 0.0078, rmin: 50,  rmax: 600,  def: 300, bullet: true },
+  { id: "127",   name: "12.7×99 mm HMG",       short: "12.7",       v: 890, d: 0.0130, rmin: 100, rmax: 1500, def: 600, bullet: true },
+  { id: "rpg",   name: "RPG-type rocket (ref)", short: "RPG ref*", v: 250, d: 0.0850, rmin: 50, rmax: 500,  def: 200, bullet: false },
+];
+
+/* ------------------------------------------------------------------ state */
+const cfg = { cam: "xiq500", count: 4, lens: "wide", mount: "shoulder", radar: true, compute: "orin15", batt: 99, eff: 0, contrast: 0.6, thresh: 0.15, confirm: 3 };
+const shot = { threat: "556", r0: 150, az: 30, el: 5, ph: 0.5, win: "final" };
+let needMs = 5;
+
+/* ------------------------------------------------------------------ helpers */
+const $ = (id) => document.getElementById(id);
+const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (x, d = 1) => (Number.isFinite(x) ? x.toFixed(d) : "—");
+const angDiff = (a, b) => { let d = ((a - b) % 360 + 540) % 360 - 180; return Math.abs(d); };
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const fmtMs = (m) => (m >= 100 ? Math.round(m) : m >= 10 ? m.toFixed(0) : m.toFixed(1)) + " ms";
+const threatById = (id) => THREATS.find((t) => t.id === id);
+
+/* ------------------------------------------------------------------ system model */
+const MOUNTS = {
+  helmet:   { y: 1.70, a: 0.155, b: 0.165, head: true, label: "helmet rail" },
+  shoulder: { y: 1.47, a: 0.25,  b: 0.17,  head: false, label: "shoulder strap" },
+  vest:     { y: 1.22, a: 0.24,  b: 0.185, head: false, label: "plate carrier" },
+};
+
+function derive(c) {
+  const cam = CAMS[c.cam], lens = LENSES[c.lens], comp = COMPUTE[c.compute], n = c.count;
+  const hfov = lens.hfov, vfov = hfov * cam.vres / cam.hres;
+  const ifov = hfov * D2R / cam.hres;
+  const framePix = cam.hres * cam.vres, frameBits = framePix * 8;
+  const bwDemand = n * frameBits * cam.fps / 1e9;
+  const pixDemand = n * framePix * cam.fps;
+  const bwLoad = bwDemand / comp.bw, pixLoad = pixDemand / comp.pix;
+  const throttle = Math.max(1, bwLoad, pixLoad);
+  const fpsEff = cam.fps / throttle;
+  const linkShare = Math.min(5, comp.bw / n);
+  const xferMs = frameBits / (linkShare * 1e9) * 1e3;
+  const procMs = comp.lat + framePix / (comp.pix / n) * 1e3;
+  const latMs = EXPOSURE_MS + xferMs + procMs + TEENSY.lat;
+  const azCover = Math.min(1, n * hfov / 360);
+  const camAz = Array.from({ length: n }, (_, i) => (i * 360 / n));
+
+  // power
+  const pCams = n * cam.power, pRadar = c.radar ? RADAR.power : 0;
+  const pLoad = pCams + comp.power + pRadar + TEENSY.power;
+  const power = pLoad * 1.1; // conversion losses
+  const runtimeH = c.batt * 0.9 / power;
+
+  // mass items with positions (x right, y up, z forward), metres
+  const m = MOUNTS[c.mount];
+  const podMass = cam.mass + lens.mass + POD_EXTRA;
+  const items = [];
+  items.push({ key: "cams", name: `Camera pods ×${n}`, mass: n * podMass, color: "--accent", y: m.y, z: 0, head: m.head });
+  items.push({ key: "harness", name: "USB3 harness", mass: n * HARNESS, color: "--muted", y: (m.y + 1.2) / 2, z: -0.05, head: false });
+  items.push({ key: "compute", name: comp.short + " + enclosure", mass: comp.mass + ENCLOSURE, color: "--sensor", y: 1.30, z: -0.20, head: false });
+  items.push({ key: "batt", name: `Battery ${c.batt} Wh`, mass: c.batt / WH_PER_KG, color: "--warn", y: 1.10, z: -0.20, head: false });
+  if (c.radar) items.push({ key: "radar", name: "IWR6843AOP radar", mass: RADAR.mass, color: "--radar", y: 1.32, z: 0.19, head: false });
+  items.push({ key: "teensy", name: "Teensy 4.1 + haptics", mass: TEENSY.mass + 0.025, color: "--ok", y: 1.42, z: 0.12, head: false });
+  if (c.eff > 0) items.push({ key: "eff", name: "Response module (placeholder)", mass: c.eff, color: "--bad", y: 1.05, z: -0.22, head: false });
+  const added = items.reduce((s, it) => s + it.mass, 0);
+  const headMass = items.filter((i) => i.head).reduce((s, i) => s + i.mass, 0);
+  // centre-of-mass shift vs a 105 kg soldier+kit at y=1.0, z=0
+  const M0 = 105, Mt = M0 + added;
+  const comY = (M0 * 1.0 + items.reduce((s, i) => s + i.mass * i.y, 0)) / Mt;
+  const comZ = (items.reduce((s, i) => s + i.mass * i.z, 0)) / Mt;
+
+  const cost = n * cam.cost + comp.cost + (c.radar ? RADAR.cost : 0) + TEENSY.cost;
+  return { cam, lens, comp, n, hfov, vfov, ifov, bwDemand, pixDemand, bwLoad, pixLoad, throttle, fpsEff, xferMs, procMs, latMs, azCover, camAz,
+    power, runtimeH, items, added, headMass, comDy: (comY - 1.0) * 1000, comDz: comZ * 1000, cost, mount: m };
+}
+
+function camRange(sys, c, th) { return th.d * c.contrast / (c.thresh * sys.ifov); }
+function radarRange(th) { const sigma = Math.PI * (th.d / 2) ** 2; return RADAR.rRef * Math.pow(sigma / 1, 0.25); }
+
+function camCovers(sys, az, el) {
+  if (Math.abs(el) > sys.vfov / 2) return false;
+  return sys.camAz.some((a) => angDiff(az, a) <= sys.hfov / 2);
+}
+
+/* Simulate one round. Returns times in seconds from trigger pull. */
+function simulate(sys, c, th, r0, az, el, ph, rph, keepFrames) {
+  const v = th.v, tImp = r0 / v;
+  const out = { tImp, rCam: camRange(sys, c, th), rRad: radarRange(th), camCovered: camCovers(sys, az, el), radCovered: false,
+    frames: [], tCamIn: null, tConf: null, tCamAlert: null, radFrames: [], tRadIn: null, tRadDet: null, tRadAlert: null, tAlert: null, margin: null, src: null };
+  if (out.camCovered) {
+    const tIn = Math.max(0, (r0 - out.rCam) / v);
+    out.tCamIn = tIn;
+    const dt = 1 / sys.fpsEff;
+    let k = Math.ceil((tIn - ph * dt) / dt - 1e-9); if (k < 0) k = 0;
+    let count = 0;
+    for (let t = ph * dt + k * dt; t < tImp; t += dt) {
+      count++;
+      if (keepFrames) out.frames.push(t);
+      if (count === c.confirm) { out.tConf = t; out.tCamAlert = t + sys.latMs / 1000; if (!keepFrames) break; }
+    }
+  }
+  if (c.radar) {
+    out.radCovered = angDiff(az, 0) <= RADAR.fovHalf && Math.abs(el) <= RADAR.fovHalf;
+    if (out.radCovered) {
+      const tIn = Math.max(0, (r0 - out.rRad) / v); out.tRadIn = tIn;
+      const dt = 1 / RADAR.fps;
+      let k = Math.ceil((tIn - rph * dt) / dt - 1e-9); if (k < 0) k = 0;
+      const t = rph * dt + k * dt;
+      if (t < tImp) { out.tRadDet = t; out.tRadAlert = t + (RADAR.proc + TEENSY.lat) / 1000; if (keepFrames) out.radFrames.push(t); }
+    }
+  }
+  const cands = [];
+  if (out.tCamAlert != null) cands.push([out.tCamAlert, "camera"]);
+  if (out.tRadAlert != null) cands.push([out.tRadAlert, "radar"]);
+  if (cands.length) { cands.sort((a, b) => a[0] - b[0]); out.tAlert = cands[0][0]; out.src = cands[0][1]; out.margin = tImp - out.tAlert; }
+  return out;
+}
+
+function monteCarlo(c, th, N, seed) {
+  const sys = derive(c), rnd = mulberry32(seed);
+  const margins = []; let alerted = 0, ok = 0, covered = 0;
+  for (let i = 0; i < N; i++) {
+    const r0 = th.rmin + rnd() * (th.rmax - th.rmin);
+    const az = rnd() * 360 - 180, el = rnd() * 50 - 25;
+    const s = simulate(sys, c, th, r0, az, el, rnd(), rnd(), false);
+    if (s.camCovered || s.radCovered) covered++;
+    if (s.margin != null && s.margin > 0) { alerted++; margins.push(s.margin * 1000); if (s.margin * 1000 >= needMs) ok++; }
+  }
+  return { N, alerted, ok, covered, margins, pAlert: alerted / N, pOk: ok / N, pCover: covered / N };
+}
+
+/* ------------------------------------------------------------------ three.js scene */
+const vp = $("viewport");
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+vp.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera3 = new THREE.PerspectiveCamera(40, 1, 0.02, 2000);
+camera3.position.set(2.6, 2.0, 3.4);
+const controls = new THREE.OrbitControls(camera3, renderer.domElement);
+controls.target.set(0, 1.15, 0); controls.enableDamping = true; controls.maxDistance = 400; controls.minDistance = 0.6;
+controls.update();
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(3, 6, 4); scene.add(sun);
+
+const C = (n) => new THREE.Color(tok(n) || "#888");
+const mats = {};
+function mat(key, opts = {}) { if (!Object.keys(opts).length && mats[key]) return mats[key][0]; const m = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.05, ...opts }); mats[key] = mats[key] || []; mats[key].push(m); return m; }
+
+const ground = new THREE.Mesh(new THREE.CircleGeometry(1500, 64), mat("--view-bg"));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+let grid = null;
+function buildGrid() {
+  if (grid) scene.remove(grid);
+  grid = new THREE.Group();
+  const g1 = new THREE.GridHelper(40, 40, C("--line"), C("--line")); g1.material.transparent = true; g1.material.opacity = 0.7; grid.add(g1);
+  const g2 = new THREE.GridHelper(400, 40, C("--line"), C("--line")); g2.material.transparent = true; g2.material.opacity = 0.4; grid.add(g2);
+  grid.position.y = 0.001; scene.add(grid);
+}
+
+/* soldier */
+const soldier = new THREE.Group(); scene.add(soldier);
+const body = mat("--body-skin"), kit = mat("--kit");
+function cap(r, len, m) { return new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 14), m); }
+function addPart(mesh, x, y, z, info) { mesh.position.set(x, y, z); if (info) mesh.userData.info = info; soldier.add(mesh); return mesh; }
+[-0.1, 0.1].forEach((x) => { addPart(cap(0.07, 0.72, kit), x, 0.47, 0); addPart(new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.26), body), x, 0.035, 0.04); });
+addPart(new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.22), kit), 0, 0.92, 0);
+const torso = cap(0.17, 0.32, body); torso.scale.set(1.05, 1, 0.68); addPart(torso, 0, 1.22, 0);
+addPart(new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.44, 0.31), kit), 0, 1.24, 0, { name: "Plate carrier", spec: "Host for harness, radar, Teensy" });
+[-1, 1].forEach((s) => {
+  const ua = cap(0.05, 0.26, kit); ua.position.set(s * 0.25, 1.33, 0.02); ua.rotation.z = s * 0.12; soldier.add(ua);
+  const fa = cap(0.045, 0.24, body); fa.position.set(s * 0.25, 1.03, 0.12); fa.rotation.x = -0.9; soldier.add(fa);
+});
+addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.1, 14), body), 0, 1.55, 0);
+addPart(new THREE.Mesh(new THREE.SphereGeometry(0.105, 24, 18), body), 0, 1.64, 0.01);
+const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.135, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), kit);
+addPart(helmet, 0, 1.655, 0, { name: "Helmet", spec: "Optional pod mount, raises neck load" });
+
+/* hardware group, rebuilt on config change */
+let hw = new THREE.Group(); scene.add(hw);
+let fovGroup = new THREE.Group(); scene.add(fovGroup);
+let ringGroup = new THREE.Group(); scene.add(ringGroup);
+let showFov = true;
+const pickables = [];
+let wedgeMats = [], ledMat = null, radarWedgeMat = null;
+
+function wedgeGeometry(hfov, vfov, len) {
+  const h = Math.tan(hfov / 2 * D2R) * len, v = Math.tan(vfov / 2 * D2R) * len;
+  const g = new THREE.BufferGeometry();
+  const p = [0,0,0, -h,-v,len, h,-v,len, h,v,len, -h,v,len];
+  const idx = [0,1,2, 0,2,3, 0,3,4, 0,4,1, 1,3,2, 1,4,3];
+  g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3)); g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+function clearGroup(g) { while (g.children.length) { const o = g.children.pop(); o.traverse((x) => { if (x.geometry) x.geometry.dispose(); }); } }
+
+function buildHardware() {
+  const sys = derive(cfg), th = threatById(shot.threat);
+  clearGroup(hw); clearGroup(fovGroup); clearGroup(ringGroup); pickables.length = 0; wedgeMats = [];
+  const accent = mat("--accent"), dark = mat("--ink");
+  const m = sys.mount, dims = sys.cam.dims;
+  const rCam = camRange(sys, cfg, th);
+  const wedgeLen = Math.min(rCam, 2.5);
+  sys.camAz.forEach((az, i) => {
+    const a = az * D2R;
+    const x = Math.sin(a) * m.a, z = Math.cos(a) * m.b;
+    const pod = new THREE.Group();
+    const bodyM = new THREE.Mesh(new THREE.BoxGeometry(dims[0] * 1.25, dims[1] * 1.25, dims[2] * 1.15), accent);
+    const lensM = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.03, 18), dark);
+    lensM.rotation.x = Math.PI / 2; lensM.position.z = dims[2] * 0.6 + 0.015;
+    pod.add(bodyM, lensM);
+    pod.position.set(x, m.y, z); pod.rotation.y = a;
+    const info = { name: `Camera pod ${i + 1}`, spec: `${sys.cam.short}, ${sys.hfov}° × ${fmt(sys.vfov, 0)}°, ${Math.round(sys.fpsEff)} fps eff., ${fmt((sys.cam.mass + sys.lens.mass + POD_EXTRA) * 1000, 0)} g` };
+    bodyM.userData.info = info; lensM.userData.info = info; pickables.push(bodyM, lensM);
+    hw.add(pod);
+    const wm = new THREE.MeshBasicMaterial({ color: C("--sensor"), transparent: true, opacity: 0.10, side: THREE.DoubleSide, depthWrite: false });
+    const w = new THREE.Mesh(wedgeGeometry(sys.hfov, sys.vfov, wedgeLen), wm);
+    w.position.copy(pod.position); w.rotation.y = a; fovGroup.add(w); wedgeMats.push(wm);
+    const em = new THREE.LineBasicMaterial({ color: C("--sensor"), transparent: true, opacity: 0.45 });
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(w.geometry), em); e.position.copy(w.position); e.rotation.copy(w.rotation); fovGroup.add(e);
+    // cable to back
+    const pts = [new THREE.Vector3(x * 0.9, m.y - 0.02, z * 0.9), new THREE.Vector3(x * 0.6, (m.y + 1.3) / 2, -0.12), new THREE.Vector3(0, 1.3, -0.19)];
+    const cable = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.004, 6), dark); hw.add(cable);
+  });
+  // compute
+  const compM = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.045), mat("--sensor"));
+  compM.position.set(0, 1.32, -0.2); compM.userData.info = { name: sys.comp.name, spec: `${sys.comp.power} W, ${fmt((sys.comp.mass + ENCLOSURE) * 1000, 0)} g incl. enclosure (est.)` };
+  hw.add(compM); pickables.push(compM);
+  // battery sized by Wh
+  const bh = 0.04 + cfg.batt / 200 * 0.12;
+  const battM = new THREE.Mesh(new THREE.BoxGeometry(0.16, bh, 0.04), mat("--warn"));
+  battM.position.set(0, 1.25 - 0.06 - bh / 2, -0.2); battM.userData.info = { name: `Li-ion battery ${cfg.batt} Wh`, spec: `${fmt(cfg.batt / WH_PER_KG * 1000, 0)} g, ${fmt(sys.runtimeH, 1)} h runtime` };
+  hw.add(battM); pickables.push(battM);
+  if (cfg.eff > 0) {
+    const s = Math.cbrt(cfg.eff / 1500);
+    const eM = new THREE.Mesh(new THREE.BoxGeometry(s * 2.2, s, s * 0.8), mat("--bad", { transparent: true, opacity: 0.8 }));
+    eM.position.set(0, 0.98, -0.22); eM.userData.info = { name: "Response module placeholder", spec: `${fmt(cfg.eff, 1)} kg reserved mass` };
+    hw.add(eM); pickables.push(eM);
+  }
+  // teensy + LED
+  const tM = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.012), mat("--ok"));
+  tM.position.set(-0.12, 1.42, 0.165); tM.userData.info = { name: "Teensy 4.1 status / haptics", spec: "600 MHz M7, alert out + event log" };
+  hw.add(tM); pickables.push(tM);
+  ledMat = new THREE.MeshBasicMaterial({ color: C("--ok") });
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.009, 12, 8), ledMat); led.position.set(-0.12, 1.445, 0.172); hw.add(led);
+  // radar
+  if (cfg.radar) {
+    const rM = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.01), mat("--radar"));
+    rM.position.set(0.08, 1.32, 0.165); rM.userData.info = { name: "TI IWR6843AOPEVM radar", spec: `60–64 GHz, 120° × 120°, ${fmt(radarRange(th), 1)} m on this round` };
+    hw.add(rM); pickables.push(rM);
+    const rr = Math.min(radarRange(th), 2.5);
+    radarWedgeMat = new THREE.MeshBasicMaterial({ color: C("--radar"), transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false });
+    const rw = new THREE.Mesh(wedgeGeometry(120, 120, rr * Math.cos(60 * D2R)), radarWedgeMat);
+    rw.position.copy(rM.position); fovGroup.add(rw);
+  } else radarWedgeMat = null;
+  // ground range rings at detection range for current threat
+  const ring = (r, colorTok, dashed) => {
+    const pts = []; for (let i = 0; i <= 128; i++) { const a = i / 128 * Math.PI * 2; pts.push(new THREE.Vector3(Math.sin(a) * r, 0.01, Math.cos(a) * r)); }
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+    const mm = dashed ? new THREE.LineDashedMaterial({ color: C(colorTok), dashSize: r / 40, gapSize: r / 60 }) : new THREE.LineBasicMaterial({ color: C(colorTok) });
+    const l = new THREE.Line(g, mm); if (dashed) l.computeLineDistances(); ringGroup.add(l);
+  };
+  ring(rCam, "--sensor", false);
+  if (cfg.radar) ring(radarRange(th), "--radar", true);
+  fovGroup.visible = showFov;
+  buildShotGeometry();
+}
+
+/* projectile + trajectory */
+const projMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const proj = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), projMat); proj.visible = false; scene.add(proj);
+const trailGroup = new THREE.Group(); scene.add(trailGroup);
+function aimPoint() { return new THREE.Vector3(0, 1.25, 0); }
+function dirVec(az, el) { return new THREE.Vector3(Math.sin(az * D2R) * Math.cos(el * D2R), Math.sin(el * D2R), Math.cos(az * D2R) * Math.cos(el * D2R)); }
+function buildShotGeometry() {
+  clearGroup(trailGroup);
+  const th = threatById(shot.threat), dir = dirVec(shot.az, shot.el), aim = aimPoint();
+  const far = aim.clone().add(dir.clone().multiplyScalar(shot.r0));
+  const g = new THREE.BufferGeometry().setFromPoints([far, aim]);
+  const l = new THREE.Line(g, new THREE.LineDashedMaterial({ color: C("--bad"), dashSize: 0.4, gapSize: 0.3, transparent: true, opacity: 0.8 }));
+  l.computeLineDistances(); trailGroup.add(l);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 1.7, 10), mat("--bad"));
+  post.position.set(far.x, 0.85, far.z); trailGroup.add(post);
+  const s = Math.max(th.d * 6, 0.03); proj.scale.set(s, s, s * 3);
+  projMat.color = C("--bad");
+  placeProjectile(0);
+}
+function placeProjectile(t) {
+  const th = threatById(shot.threat), dir = dirVec(shot.az, shot.el), r = Math.max(0, shot.r0 - th.v * t);
+  proj.position.copy(aimPoint().add(dir.multiplyScalar(r)));
+  proj.lookAt(aimPoint());
+}
+
+/* hover tooltip */
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = $("tip");
+renderer.domElement.addEventListener("pointermove", (e) => {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  ray.setFromCamera(mouse, camera3);
+  const hit = ray.intersectObjects(pickables.concat(soldier.children.filter((c) => c.userData.info)), false)[0];
+  if (hit && hit.object.userData.info) {
+    const inf = hit.object.userData.info; tip.innerHTML = `<b>${inf.name}</b><span>${inf.spec}</span>`;
+    tip.hidden = false;
+    const x = Math.min(e.clientX - r.left + 14, r.width - 250);
+    tip.style.left = x + "px"; tip.style.top = (e.clientY - r.top + 14) + "px";
+  } else tip.hidden = true;
+});
+renderer.domElement.addEventListener("pointerleave", () => { tip.hidden = true; });
+
+function resize() { const w = vp.clientWidth, h = vp.clientHeight; renderer.setSize(w, h, false); camera3.aspect = w / h; camera3.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(vp);
+
+/* playback */
+let play = null;
+function startPlayback() {
+  const sys = derive(cfg), th = threatById(shot.threat);
+  const s = simulate(sys, cfg, th, shot.r0, shot.az, shot.el, shot.ph, shot.ph, true);
+  const winLen = Math.max(s.rCam, s.rRad, 6) * 1.4 / th.v;
+  const t0 = Math.max(0, s.tImp - winLen);
+  play = { s, t0, t1: s.tImp, wall0: performance.now(), dur: 4200, lastT: t0, flash: 0, confirmed: false, alerted: false };
+  proj.visible = true;
+  wedgeMats.forEach((m) => m.color = C("--sensor"));
+  ledMat.color = C("--ok");
+  setState("Tracking…", "warn");
+  // frame camera to see projectile path near body
+  const view = Math.min(Math.max(s.rCam, 6), 45);
+  const d = dirVec(shot.az + 70, 0).multiplyScalar(view * 0.9);
+  camera3.position.set(d.x, view * 0.45 + 1.5, d.z); controls.target.set(0, 1.1, 0);
+}
+function setState(txt, cls) { const el = $("hudState"); el.className = "chip " + (cls || ""); el.innerHTML = `<i></i>${txt}`; }
+
+function tick(now) {
+  requestAnimationFrame(tick);
+  controls.update();
+  if (play) {
+    const f = Math.min(1, (now - play.wall0) / play.dur);
+    const t = play.t0 + (play.t1 - play.t0) * f;
+    placeProjectile(t);
+    const s = play.s;
+    if (s.frames.some((ft) => ft > play.lastT && ft <= t)) play.flash = 1;
+    if (s.radFrames.some((ft) => ft > play.lastT && ft <= t) && radarWedgeMat) radarWedgeMat.opacity = 0.35;
+    if (!play.confirmed && ((s.tConf != null && t >= s.tConf) || (s.tRadDet != null && t >= s.tRadDet))) { play.confirmed = true; wedgeMats.forEach((m) => m.color = C("--ok")); }
+    if (!play.alerted && s.tAlert != null && t >= s.tAlert) { play.alerted = true; ledMat.color = C("--accent"); setState(`Alert · ${fmt((s.tImp - s.tAlert) * 1000, 1)} ms to impact`, "ok"); }
+    play.lastT = t;
+    if (f >= 1) {
+      if (!play.alerted) setState(s.tAlert != null ? "Alert came after impact" : "No alert before impact", "bad");
+      play = null;
+    }
+  }
+  {
+    const fl = play ? play.flash : 0;
+    wedgeMats.forEach((m) => m.opacity = 0.12 + 0.3 * fl);
+    if (play) play.flash *= 0.8;
+    if (radarWedgeMat && radarWedgeMat.opacity > 0.08) radarWedgeMat.opacity = Math.max(0.08, radarWedgeMat.opacity * 0.93);
+  }
+  renderer.render(scene, camera3);
+}
+
+/* ------------------------------------------------------------------ UI: gauges, mass, status */
+function gauge(label, value, unit, sub, frac, level) {
+  const w = Math.max(0, Math.min(1, frac ?? 0)) * 100;
+  return `<div class="gauge ${level || ""}"><span class="eyebrow">${label}</span><span class="v">${value}<small>${unit}</small></span><span class="s">${sub}</span>${frac != null ? `<div class="bar"><div style="width:${w}%"></div></div>` : ""}</div>`;
+}
+function renderBench() {
+  const sys = derive(cfg), th = threatById(shot.threat);
+  const lvl = (x, a, b) => (x > b ? "bad" : x > a ? "warn" : "");
+  const rCam = camRange(sys, cfg, th);
+  $("gauges").innerHTML = [
+    gauge("Added mass", fmt(sys.added, 2), "kg", sys.mount.head ? `${fmt(sys.headMass * 1000, 0)} g on the helmet` : `${fmt(sys.headMass * 1000, 0)} g head-borne`, sys.added / 4, lvl(sys.added, 1.5, 3)),
+    gauge("Power draw", fmt(sys.power, 1), "W", `${fmt(sys.runtimeH, 1)} h on ${cfg.batt} Wh`, sys.power / 40, sys.runtimeH < 2 ? "bad" : sys.runtimeH < 4 ? "warn" : ""),
+    gauge("USB3 load", fmt(sys.bwLoad * 100, 0), "%", `${fmt(sys.bwDemand, 2)} of ${sys.comp.bw} Gbps`, sys.bwLoad, lvl(sys.bwLoad, 0.85, 1)),
+    gauge("Compute load", fmt(sys.pixLoad * 100, 0), "%", `${fmt(sys.pixDemand / 1e6, 0)} Mpx/s`, sys.pixLoad, lvl(sys.pixLoad, 0.85, 1)),
+    gauge("Effective rate", fmt(sys.fpsEff, 0), "fps", sys.throttle > 1 ? `throttled from ${sys.cam.fps}` : "full sensor rate", sys.fpsEff / sys.cam.fps, sys.throttle > 1 ? "warn" : ""),
+    gauge("Coverage", fmt(sys.azCover * 360, 0), "°", `vertical ${fmt(sys.vfov, 0)}°, ${sys.n} pods`, sys.azCover, lvl(1 - sys.azCover, 0.05, 0.3)),
+    gauge("Detect range", fmt(rCam, 1), "m", `${th.name}, ${fmt(sys.ifov * 1000, 2)} mrad/px`, null),
+    gauge("Parts cost", "€" + Math.round(sys.cost).toLocaleString("en-IE"), "", "excl. lenses, harness, VAT mix", null),
+  ].join("");
+  const bar = $("massBar"), leg = $("massLegend");
+  bar.innerHTML = sys.items.map((it) => `<div title="${it.name}: ${fmt(it.mass * 1000, 0)} g" style="width:${it.mass / sys.added * 100}%;background:var(${it.color})"></div>`).join("");
+  leg.innerHTML = sys.items.map((it) => `<span><i style="background:var(${it.color})"></i>${it.name} <em>${fmt(it.mass * 1000, 0)} g</em></span>`).join("");
+  $("massTotal").textContent = `${fmt(sys.added, 2)} kg · CoM shift ${sys.comDy >= 0 ? "+" : ""}${fmt(sys.comDy, 1)} mm up, ${fmt(sys.comDz, 1)} mm fore/aft`;
+  const st = [];
+  st.push(`<span class="chip ${sys.added > 3 ? "bad" : sys.added > 1.5 ? "warn" : "ok"}"><i></i>${fmt(sys.added, 2)} kg added</span>`);
+  st.push(`<span class="chip ${sys.runtimeH < 2 ? "bad" : sys.runtimeH < 4 ? "warn" : "ok"}"><i></i>${fmt(sys.runtimeH, 1)} h runtime</span>`);
+  st.push(`<span class="chip ${sys.throttle > 1 ? "warn" : "ok"}"><i></i>${sys.throttle > 1 ? "Link or compute saturated" : "Pipeline within budget"}</span>`);
+  $("statusStrip").innerHTML = st.join("");
+  $("hudThreat").innerHTML = `<i style="background:var(--bad)"></i>${th.name} · ${shot.r0} m · ${shot.az}°`;
+}
+
+/* ------------------------------------------------------------------ UI: engagement trace */
+function renderShot() {
+  const sys = derive(cfg), th = threatById(shot.threat);
+  const s = simulate(sys, cfg, th, shot.r0, shot.az, shot.el, shot.ph, shot.ph, true);
+  const svg = $("timeline"), W = 900, H = 190, L = 92, R = 20;
+  let t0 = 0, t1 = s.tImp;
+  if (shot.win === "final") {
+    const cands = [s.tImp - 0.01];
+    if (s.tCamIn != null) cands.push(s.tCamIn); if (s.tRadIn != null) cands.push(s.tRadIn);
+    t0 = Math.max(0, Math.min(...cands) - (s.tImp - Math.min(...cands)) * 0.25);
+  }
+  t1 = s.tImp + (s.tImp - t0) * 0.06;
+  const X = (t) => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const ms = (t) => t * 1000;
+  const rows = { cam: 46, rad: 86, out: 126 };
+  let h = "";
+  // axis ticks
+  const span = ms(t1 - t0), step = [0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000].find((x) => span / x <= 9) || 1000;
+  for (let v = Math.ceil(ms(t0) / step) * step; v <= ms(t1); v += step) {
+    const x = X(v / 1000);
+    h += `<line x1="${x}" x2="${x}" y1="24" y2="150" stroke="var(--line)" stroke-width="1"/>`;
+    h += `<text x="${x}" y="166" text-anchor="middle" font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${+v.toFixed(2)}</text>`;
+  }
+  h += `<text x="${W - R}" y="183" text-anchor="end" font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace">ms after trigger pull</text>`;
+  const label = (y, t) => `<text x="${L - 10}" y="${y + 4}" text-anchor="end" font-size="12" fill="var(--ink)" font-family="IBM Plex Sans Condensed, sans-serif">${t}</text>`;
+  h += label(rows.cam, "Cameras") + label(rows.rad, "Radar") + label(rows.out, "Alert out");
+  [rows.cam, rows.rad, rows.out].forEach((y) => { h += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1.5"/>`; });
+  // in-range spans
+  if (s.tCamIn != null) h += `<rect x="${X(Math.max(s.tCamIn, t0))}" y="${rows.cam - 9}" width="${Math.max(1, X(s.tImp) - X(Math.max(s.tCamIn, t0)))}" height="18" fill="var(--sensor)" opacity="0.14"/>`;
+  else h += `<text x="${L + 6}" y="${rows.cam - 12}" font-size="11" fill="var(--bad)">${s.camCovered ? "" : "outside camera coverage"}</text>`;
+  if (s.tRadIn != null) h += `<rect x="${X(Math.max(s.tRadIn, t0))}" y="${rows.rad - 9}" width="${Math.max(1, X(s.tImp) - X(Math.max(s.tRadIn, t0)))}" height="18" fill="var(--radar)" opacity="0.16"/>`;
+  else h += `<text x="${L + 6}" y="${rows.rad - 12}" font-size="11" fill="var(--muted)">${cfg.radar ? (s.radCovered ? "" : "outside radar field of view") : "radar off"}</text>`;
+  // frames
+  const visFrames = s.frames.filter((t) => t >= t0 && t <= t1);
+  const stride = Math.max(1, Math.ceil(visFrames.length / 160));
+  visFrames.forEach((t, i) => {
+    if (i % stride) return;
+    const conf = s.tConf != null && t <= s.tConf + 1e-12;
+    h += `<line x1="${X(t)}" x2="${X(t)}" y1="${rows.cam - 7}" y2="${rows.cam + 7}" stroke="${conf ? "var(--ok)" : "var(--sensor)"}" stroke-width="${conf ? 2.5 : 1.5}"/>`;
+  });
+  s.radFrames.forEach((t) => { h += `<rect x="${X(t) - 3}" y="${rows.rad - 7}" width="6" height="14" fill="var(--radar)"/>`; });
+  // confirm marker and latency
+  const mark = (t, y, col, txt, anchor = "middle") => `<circle cx="${X(t)}" cy="${y}" r="5" fill="${col}"/><text x="${X(t)}" y="${y - 12}" text-anchor="${anchor}" font-size="10.5" fill="${col}" font-family="IBM Plex Mono, monospace">${txt}</text>`;
+  if (s.tConf != null) { h += `<line x1="${X(s.tConf)}" x2="${X(s.tCamAlert)}" y1="${rows.cam}" y2="${rows.out}" stroke="var(--ok)" stroke-dasharray="3 3"/>`; h += mark(s.tConf, rows.cam, "var(--ok)", "confirm"); }
+  if (s.tRadDet != null) h += `<line x1="${X(s.tRadDet)}" x2="${X(s.tRadAlert)}" y1="${rows.rad}" y2="${rows.out}" stroke="var(--radar)" stroke-dasharray="3 3"/>`;
+  // impact
+  h += `<line x1="${X(s.tImp)}" x2="${X(s.tImp)}" y1="24" y2="150" stroke="var(--bad)" stroke-width="2"/>`;
+  h += `<text x="${X(s.tImp) - 4}" y="18" text-anchor="end" font-size="11" fill="var(--bad)" font-family="IBM Plex Mono, monospace">impact ${fmt(ms(s.tImp), 1)} ms</text>`;
+  if (s.tAlert != null) {
+    const ax = X(s.tAlert);
+    h += `<circle cx="${ax}" cy="${rows.out}" r="6" fill="var(--accent)"/>`;
+    if (s.margin > 0) {
+      h += `<line x1="${ax}" x2="${X(s.tImp)}" y1="${rows.out + 14}" y2="${rows.out + 14}" stroke="var(--accent)" stroke-width="2"/>`;
+      h += `<text x="${(ax + X(s.tImp)) / 2}" y="${rows.out + 28}" text-anchor="middle" font-size="11" fill="var(--accent)" font-family="IBM Plex Mono, monospace">${fmt(s.margin * 1000, 2)} ms warning</text>`;
+    } else h += `<text x="${ax + 8}" y="${rows.out + 4}" font-size="11" fill="var(--bad)">alert after impact</text>`;
+  }
+  svg.innerHTML = h;
+
+  const camN = s.tConf != null ? s.frames.filter((t) => t <= s.tConf).length : s.frames.length;
+  const streak = th.v * EXPOSURE_MS / 1000 * 100;
+  const pxAt = (r) => th.d / r / sys.ifov;
+  const res = [
+    gauge("Time of flight", fmt(s.tImp * 1000, 1), "ms", `${th.v} m/s over ${shot.r0} m`, null),
+    gauge("Camera range", fmt(s.rCam, 1), "m", `${fmt(th.v / sys.fpsEff, 2)} m travel per frame`, null),
+    gauge("Frames on target", String(s.frames.length), "", s.camCovered ? `need ${cfg.confirm} to confirm` : "not in any pod's view", null, s.frames.length >= cfg.confirm ? "" : "bad"),
+    gauge("Size at 5 m", fmt(pxAt(5), 2), "px", `${fmt(streak, 1)} cm blur per exposure`, null),
+    gauge("Pipeline latency", fmt(sys.latMs, 2), "ms", `xfer ${fmt(sys.xferMs, 2)} + proc ${fmt(sys.procMs, 2)}`, null),
+    gauge("Warning", s.margin != null && s.margin > 0 ? fmt(s.margin * 1000, 2) : "none", s.margin > 0 ? "ms" : "", s.src ? `first cue: ${s.src}` : "no cue before impact", null, s.margin > 0 ? (s.margin * 1000 >= needMs ? "" : "warn") : "bad"),
+  ];
+  $("shotResults").innerHTML = res.join("");
+  const v = $("shotVerdict");
+  if (s.margin != null && s.margin > 0) {
+    const m = s.margin * 1000;
+    v.className = "verdict " + (m >= 250 ? "ok" : m >= needMs ? "warn" : "bad");
+    v.innerHTML = `The ${s.src} path raises the alert <b>${fmt(m, 2)} ms</b> before arrival. ` +
+      (m >= 250 ? "That is longer than a typical human reaction time (about 250 ms), so a haptic cue could be acted on." :
+       m >= 10 ? "Too short for the wearer to react, but long enough for an automated cue or an event log to fire." :
+       "That is under the time an actuator would need to do anything physical; useful only as a logged detection.");
+  } else {
+    v.className = "verdict bad";
+    const why = !s.camCovered && !s.radCovered ? "The round arrives outside every sensor's field of view." :
+      s.camCovered && s.frames.length < cfg.confirm ? `Only ${s.frames.length} frame${s.frames.length === 1 ? "" : "s"} caught the round inside ${fmt(s.rCam, 1)} m; the track needs ${cfg.confirm}.` :
+      "The detection pipeline finished after the round had already arrived.";
+    v.innerHTML = `<b>No usable warning.</b> ${why}`;
+  }
+}
+
+/* ------------------------------------------------------------------ UI: Monte Carlo */
+const N_MC = 1500;
+function renderMC() {
+  const combos = [];
+  for (const camK of Object.keys(CAMS)) for (const compK of Object.keys(COMPUTE)) combos.push({ ...cfg, cam: camK, compute: compK });
+  const rows = combos.map((c, ci) => {
+    const sys = derive(c);
+    const per = THREATS.map((th, ti) => monteCarlo(c, th, N_MC, 1000 + ti * 97));
+    const bulletP = per.filter((_, i) => THREATS[i].bullet).map((r) => r.pOk);
+    const score = bulletP.reduce((a, b) => a + b, 0) / bulletP.length;
+    return { c, sys, per, score, current: c.cam === cfg.cam && c.compute === cfg.compute };
+  });
+  rows.sort((a, b) => b.score - a.score || a.sys.added - b.sys.added);
+  const best = rows[0];
+  const cls = (p) => (p >= 0.7 ? "ok" : p >= 0.3 ? "warn" : "bad");
+  let h = `<thead><tr><th>Camera + compute</th><th class="n">Mass</th><th class="n">Power</th><th class="n">Run</th><th class="n">Cost</th>`;
+  THREATS.forEach((t) => { h += `<th class="n" title="${t.name}">${t.short}</th>`; });
+  h += `<th class="n">Small-arms score</th></tr></thead><tbody>`;
+  rows.forEach((r, i) => {
+    h += `<tr class="${i === 0 ? "best" : ""} ${r.current ? "current" : ""}"><td>${r.sys.cam.short} + ${r.sys.comp.short}${r.current ? ' <span class="mono" style="color:var(--accent);font-size:11px">current</span>' : ""}${r.sys.throttle > 1 ? ` <span class="mono" style="color:var(--warn);font-size:11px">${Math.round(r.sys.fpsEff)} fps</span>` : ""}</td>`;
+    h += `<td class="n">${fmt(r.sys.added, 2)} kg</td><td class="n">${fmt(r.sys.power, 0)} W</td><td class="n">${fmt(r.sys.runtimeH, 1)} h</td><td class="n">€${Math.round(r.sys.cost)}</td>`;
+    r.per.forEach((p) => { const s = p.margins.slice().sort((a, b) => a - b); const med = s.length ? s[Math.floor(s.length / 2)] : null; h += `<td class="n"><span class="pct ${cls(p.pOk)}">${Math.round(p.pOk * 100)}%</span><small class="med">${med != null ? fmtMs(med) : "no cue"}</small></td>`; });
+    h += `<td class="n"><b>${Math.round(r.score * 100)}%</b></td></tr>`;
+  });
+  h += `</tbody>`;
+  $("rankTbl").innerHTML = h;
+
+  // histogram for current config + selected threat
+  const th = threatById(shot.threat);
+  const cur = monteCarlo(cfg, th, 4000, 4242);
+  drawHist(cur, th);
+
+  const curRow = rows.find((r) => r.current);
+  const bulletsOnly = THREATS.filter((t) => t.bullet);
+  const rpgIdx = THREATS.findIndex((t) => !t.bullet);
+  const sorted = cur.margins.slice().sort((a, b) => a - b);
+  const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
+  const p90 = sorted.length ? sorted[Math.floor(sorted.length * 0.9)] : null;
+  const t = [];
+  t.push(`<p><b>Best stack at these settings:</b> ${best.sys.cam.short} with ${best.sys.comp.short}, scoring ${Math.round(best.score * 100)}% across the five small-arms threats at ≥ ${needMs} ms warning, for ${fmt(best.sys.added, 2)} kg and ${fmt(best.sys.power, 0)} W.</p>`);
+  if (curRow && curRow !== best) t.push(`<p>Your current stack scores ${Math.round(curRow.score * 100)}%. ${curRow.sys.throttle > 1 ? `It is throttled to ${Math.round(curRow.sys.fpsEff)} fps by ${curRow.sys.bwLoad > curRow.sys.pixLoad ? "USB bandwidth" : "compute"}, which costs frames on target.` : ""}</p>`);
+  t.push(`<p><b>${th.name}, current stack:</b> ${Math.round(cur.pAlert * 100)}% of rounds raise any alert before impact; ${Math.round(cur.pOk * 100)}% give ≥ ${needMs} ms. ${med != null ? `Median warning ${fmt(med, 1)} ms, 90th percentile ${fmt(p90, 1)} ms.` : ""}</p>`);
+  const rpgP = curRow ? curRow.per[rpgIdx].pOk : 0;
+  t.push(`<p>Compare the RPG-type reference (${Math.round(rpgP * 100)}%): a large, slow round is visible from far enough out to leave real reaction time, which is why fielded active protection targets rockets, not bullets. For small arms the limit is pixel angle: a 5.56 mm round is sub-pixel beyond a few metres with any of these sensors, so warning time is capped near ${fmt(camRange(derive(cfg), cfg, bulletsOnly[1]) / bulletsOnly[1].v * 1000, 1)} ms however fast the pipeline gets.</p>`);
+  t.push(`<p style="color:var(--muted)">Levers that move the result most: narrower lenses (more range, less coverage), more pods to restore coverage, higher contrast (e.g. thermal or active illumination), and fewer confirm frames (more false alarms).</p>`);
+  $("mcText").innerHTML = t.join("");
+}
+
+function drawHist(r, th) {
+  const svg = $("hist"), W = 560, H = 240, L = 46, R = 14, T = 14, B = 40;
+  const ms = r.margins;
+  const maxV = ms.length ? Math.max(...ms) : 1;
+  const bins = 24, bw = maxV / bins || 1;
+  const counts = new Array(bins).fill(0);
+  ms.forEach((m) => { counts[Math.min(bins - 1, Math.floor(m / bw))]++; });
+  const missed = r.N - r.alerted;
+  const all = counts.concat([missed]);
+  const ymax = Math.max(1, ...all);
+  const plotW = W - L - R, plotH = H - T - B, gapX = 12;
+  const barW = (plotW - gapX - 34) / bins;
+  let h = "";
+  for (let i = 0; i <= 4; i++) {
+    const y = T + plotH - plotH * i / 4;
+    h += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)"/>`;
+    h += `<text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${Math.round(ymax * i / 4)}</text>`;
+  }
+  counts.forEach((c, i) => {
+    const x = L + i * barW, hh = plotH * c / ymax, lo = i * bw;
+    const col = lo + bw <= needMs ? "var(--warn)" : "var(--accent)";
+    h += `<rect x="${x + 1}" y="${T + plotH - hh}" width="${Math.max(1, barW - 2)}" height="${hh}" fill="${col}"><title>${fmt(lo, 1)}–${fmt(lo + bw, 1)} ms: ${c} rounds</title></rect>`;
+  });
+  const mx = L + bins * barW + gapX, mh = plotH * missed / ymax;
+  h += `<rect x="${mx}" y="${T + plotH - mh}" width="30" height="${mh}" fill="var(--bad)"><title>No alert before impact: ${missed}</title></rect>`;
+  h += `<text x="${mx + 15}" y="${H - B + 16}" text-anchor="middle" font-size="10" fill="var(--bad)" font-family="IBM Plex Mono, monospace">miss</text>`;
+  [0, 0.5, 1].forEach((f) => { const x = L + f * bins * barW; h += `<text x="${x}" y="${H - B + 16}" text-anchor="${f === 0 ? "start" : "middle"}" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${fmt(maxV * f, maxV < 10 ? 1 : 0)}</text>`; });
+  h += `<text x="${L + bins * barW / 2}" y="${H - 6}" text-anchor="middle" font-size="10.5" fill="var(--muted)">warning time before impact (ms)</text>`;
+  if (needMs > 0 && needMs < maxV) { const x = L + needMs / bw * barW; h += `<line x1="${x}" x2="${x}" y1="${T}" y2="${T + plotH}" stroke="var(--ink)" stroke-dasharray="4 3"/><text x="${x + 4}" y="${T + 10}" font-size="10" fill="var(--ink)" font-family="IBM Plex Mono, monospace">need ${needMs} ms</text>`; }
+  svg.innerHTML = h;
+  $("histTitle").textContent = `Warning time · ${th.name}`;
+  $("histSub").textContent = `${r.N.toLocaleString()} rounds, ${th.rmin}–${th.rmax} m, any bearing`;
+}
+
+/* ------------------------------------------------------------------ parts */
+function renderParts() {
+  const p = [
+    { tag: "Camera · fast", name: "XIMEA xiQ", role: "Compact global-shutter USB3. Best frame rate per gram; VGA limits pixel angle.", rows: [["Size", "26.4×26.4×26 mm"], ["Mass", "≈27 g"], ["Rate", ">500 fps VGA, ~1000 ROI"], ["Power", "≈1 W"], ["Price", "from €313 (historic)"]] },
+    { tag: "Camera · resolution", name: "Daheng MER2-160-227U3M", role: "Sony IMX273 1.6 MP mono. Finer pixel angle means longer detection range, but slower frames, more bandwidth.", rows: [["Size", "29×29×29 mm"], ["Mass", "65 g"], ["Rate", "227 fps @ 1440×1080"], ["Power", "2.7 W max"], ["Price", "€240"]] },
+    { tag: "Compute", name: "Jetson Orin Nano Super", role: "CUDA frame differencing and a small detector across every pod. The heaviest power line item.", rows: [["AI", "67 TOPS"], ["RAM", "8 GB"], ["Power", "7–25 W"], ["Mass", "≈180 g dev kit (est.)"], ["Price", "€384.48 ex VAT"]] },
+    { tag: "Radar", name: "TI IWR6843AOPEVM", role: "General-purpose 60 GHz point cloud. A second, independent close-range cue; not a bullet tracker.", rows: [["Band", "60–64 GHz"], ["Array", "3 TX / 4 RX"], ["FoV", "120° × 120°"], ["Power", "≈2 W (est.)"], ["Price", "≈$172"]] },
+    { tag: "Controller", name: "Teensy 4.1", role: "Status LEDs, haptic direction cue, event timestamps and logging. Not used for interception control.", rows: [["CPU", "600 MHz Cortex-M7"], ["RAM", "1 MB"], ["Flash", "8 MB"], ["Power", "≈0.5 W"], ["Price", "€41.30 incl. VAT"]] },
+    { tag: "Baseline", name: "Raspberry Pi 5", role: "Included for comparison. Fine for one slow camera, saturates quickly with several fast ones.", rows: [["CPU", "4× Cortex-A76"], ["Power", "5–12 W"], ["Mass", "≈70 g with cooler (est.)"], ["Price", "≈€85 (est.)"]] },
+  ];
+  $("parts").innerHTML = p.map((x) => `<div class="part"><span class="tag">${x.tag}</span><h3>${x.name}</h3><p class="role">${x.role}</p><dl>${x.rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")}</dl></div>`).join("");
+}
+
+/* ------------------------------------------------------------------ wiring */
+function setupSeg(id, obj, key, after) {
+  const seg = $(id);
+  seg.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    obj[key] = b.dataset.v;
+    seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    after();
+  });
+}
+let mcTimer = null;
+function scheduleMC() { clearTimeout(mcTimer); mcTimer = setTimeout(renderMC, 120); }
+function onCfg() { buildHardware(); renderBench(); renderShot(); scheduleMC(); }
+function onShot(rebuildRings) { if (rebuildRings) buildHardware(); else buildShotGeometry(); renderBench(); renderShot(); }
+
+const bindRange = (id, obj, key, out, f, after) => { const el = $(id); const upd = () => { obj[key] = +el.value; $(out).textContent = f(+el.value); }; el.addEventListener("input", () => { upd(); after(); }); upd(); };
+$("cam").addEventListener("change", (e) => { cfg.cam = e.target.value; onCfg(); });
+$("compute").addEventListener("change", (e) => { cfg.compute = e.target.value; onCfg(); });
+$("radar").addEventListener("change", (e) => { cfg.radar = e.target.checked; onCfg(); });
+bindRange("count", cfg, "count", "countOut", (v) => v, onCfg);
+bindRange("batt", cfg, "batt", "battOut", (v) => v + " Wh", onCfg);
+bindRange("eff", cfg, "eff", "effOut", (v) => v.toFixed(1) + " kg", onCfg);
+bindRange("contrast", cfg, "contrast", "contrastOut", (v) => v.toFixed(2), onCfg);
+bindRange("thresh", cfg, "thresh", "threshOut", (v) => v.toFixed(2), onCfg);
+bindRange("confirm", cfg, "confirm", "confirmOut", (v) => v, onCfg);
+setupSeg("lensSeg", cfg, "lens", onCfg);
+setupSeg("mountSeg", cfg, "mount", onCfg);
+setupSeg("tlSeg", shot, "win", renderShot);
+
+const thSel = $("threat");
+thSel.innerHTML = THREATS.map((t) => `<option value="${t.id}">${t.name} · ${t.v} m/s</option>`).join("");
+thSel.value = shot.threat;
+function applyThreatRange() {
+  const th = threatById(shot.threat), r = $("r0");
+  r.min = th.rmin; r.max = th.rmax; r.value = Math.min(th.rmax, Math.max(th.rmin, shot.r0 < th.rmin || shot.r0 > th.rmax ? th.def : shot.r0));
+  shot.r0 = +r.value; $("r0Out").textContent = shot.r0 + " m";
+}
+thSel.addEventListener("change", (e) => { shot.threat = e.target.value; applyThreatRange(); onShot(true); scheduleMC(); });
+applyThreatRange();
+bindRange("r0", shot, "r0", "r0Out", (v) => v + " m", () => onShot(false));
+bindRange("az", shot, "az", "azOut", (v) => v + "°", () => onShot(false));
+bindRange("el", shot, "el", "elOut", (v) => v + "°", () => onShot(false));
+bindRange("ph", shot, "ph", "phOut", (v) => v.toFixed(2), () => onShot(false));
+bindRange("need", { get v() { return needMs; }, set v(x) { needMs = x; } }, "v", "needOut", (v) => v + " ms", () => { scheduleMC(); renderShot(); });
+
+$("btnFire").addEventListener("click", startPlayback);
+$("btnFov").addEventListener("click", (e) => { showFov = !showFov; fovGroup.visible = showFov; e.target.textContent = showFov ? "Hide fields of view" : "Show fields of view"; e.target.setAttribute("aria-pressed", String(showFov)); });
+let topView = false;
+$("btnView").addEventListener("click", (e) => {
+  topView = !topView;
+  if (topView) { camera3.position.set(0.01, 14, 0.01); controls.target.set(0, 0, 0); e.target.textContent = "Orbit view"; }
+  else { camera3.position.set(2.6, 2.0, 3.4); controls.target.set(0, 1.15, 0); e.target.textContent = "Top view"; }
+});
+
+/* theme sync */
+function applyTheme() {
+  scene.background = C("--view-bg");
+  Object.entries(mats).forEach(([k, arr]) => arr.forEach((m) => m.color = C(k)));
+  buildGrid(); buildHardware();
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+renderParts();
+applyTheme();
+renderBench();
+renderShot();
+renderMC();
+resize();
+requestAnimationFrame(tick);
+})();
+</script>
+
+</body>
+</html>
