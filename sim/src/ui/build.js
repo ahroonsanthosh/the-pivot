@@ -28,6 +28,7 @@ const RAIL = [
     { k: "controller", type: "part", cat: "controller", label: "Controller" },
     { k: "driver", type: "part", cat: "driver", label: "Actuator driver" },
     { k: "aim", type: "part", cat: "actuator", label: "Aiming actuator", none: "None (fixed bearing)", filter: (p) => p.kind !== "linear" },
+    { k: "aimAxes", type: "seg", num: true, label: "Driven axes", opts: [["1", "Pan only"], ["2", "Pan and tilt"]], show: (b) => b.aim !== "none" },
     { k: "frame", type: "part", cat: "structure", label: "Turret frame", none: "None", filter: (p) => p.role === "frame", show: (b) => b.aim !== "none" },
     { k: "gearing", type: "part", cat: "structure", label: "Bearing / gearing", none: "None (direct drive)", filter: (p) => p.role === "gearing", show: (b) => b.aim !== "none" },
     { k: "deploy", type: "part", cat: "actuator", label: "Deployment", none: "None", extra: [["pneumatic", "Pneumatic: source + valve + line"]] },
@@ -83,7 +84,7 @@ function syncRail() {
       const el = $("b_" + it.k); if (document.activeElement !== el) el.value = b[it.k];
       $("o_" + it.k).textContent = it.fmt(+b[it.k], b);
     } else {
-      document.querySelectorAll(`#buildRail .seg[data-k="${it.k}"] button`).forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === b[it.k])));
+      document.querySelectorAll(`#buildRail .seg[data-k="${it.k}"] button`).forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === String(b[it.k]))));
     }
   }
   $("buildName").textContent = S.build.name ? `Started from: ${S.build.name}` : "";
@@ -99,7 +100,7 @@ function wireRail() {
   };
   f.addEventListener("input", (e) => { const k = e.target.dataset.k; if (k && e.target.type === "range") set(k, +e.target.value); });
   f.addEventListener("change", (e) => { const k = e.target.dataset.k; if (k && e.target.tagName === "SELECT") set(k, e.target.value); });
-  f.addEventListener("click", (e) => { const btn = e.target.closest(".seg button"); if (!btn) return; set(btn.closest(".seg").dataset.k, btn.dataset.v); });
+  f.addEventListener("click", (e) => { const btn = e.target.closest(".seg button"); if (!btn) return; const k = btn.closest(".seg").dataset.k; set(k, RAIL_ITEMS[k] && RAIL_ITEMS[k].num ? +btn.dataset.v : btn.dataset.v); });
   f.addEventListener("submit", (e) => e.preventDefault());
 }
 
@@ -136,8 +137,8 @@ function renderBench() {
   $("massLegend").innerHTML = items.map((it) => `<span><i style="background:var(${it.color})"></i>${esc(it.name)} <em>${it.mass >= 1 ? kgTxt(it.mass) : fmt(it.mass * 1000, 0) + " g"}</em></span>`).join("");
   $("massTotal").textContent = `${kgTxt(sys.added)} · CoM ${sys.comDy >= 0 ? "+" : ""}${fmt(sys.comDy, 1)} mm up, ${fmt(sys.comDz, 1)} mm fore/aft`;
 
-  $("readyTbl").innerHTML = `<thead><tr><th>Slot</th><th>Part</th><th class="n">Rating</th><th class="n">Est. fields</th></tr></thead><tbody>${rd.slots.map((s) =>
-    `<tr title="${esc(s.part.note || "")}"><td>${s.slot}</td><td class="wrapcell">${esc(s.part.name)}${s.part.shortlist ? ' <span class="star">★</span>' : ""}</td><td class="n">${ratingChip(s.part)}</td><td class="n">${(s.part.est || []).length || "—"}</td></tr>`).join("")}</tbody>`;
+  $("readyTbl").innerHTML = `<thead><tr><th>Slot</th><th>Part</th><th class="n">Rating</th><th>Verified</th><th class="n">Est. fields</th></tr></thead><tbody>${rd.slots.map((s) =>
+    `<tr title="${esc(s.part.note || "")}"><td>${s.slot}${s.slot === "Aim actuator" && SYS.resp.axes > 1 ? " ×2" : ""}</td><td class="wrapcell">${esc(s.part.name)}${s.part.shortlist ? ' <span class="star">★</span>' : ""}</td><td class="n">${ratingChip(s.part)}</td><td>${statusChip(s.part)}</td><td class="n">${(s.part.est || []).length || "—"}</td></tr>`).join("")}</tbody>`;
   $("readySummary").textContent = rd.min == null ? "no rated parts" : `weakest ${rd.min}/10 · mean ${fmt(rd.mean, 1)}${rd.unrated.length ? ` · ${rd.unrated.length} unrated` : ""}`;
 
   const all = sys.issues.concat(EVAL.violations);

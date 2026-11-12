@@ -21,9 +21,10 @@
     <a href="#engage"><b>3</b>One round</a>
     <a href="#perf"><b>4</b>Scenario</a>
     <a href="#trade"><b>5</b>Trade study</a>
-    <a href="#compare"><b>6</b>Saved builds</a>
-    <a href="#library"><b>7</b>Parts library</a>
-    <a href="#model"><b>8</b>Model</a>
+    <a href="#verify"><b>6</b>Verify</a>
+    <a href="#compare"><b>7</b>Saved builds</a>
+    <a href="#library"><b>8</b>Parts library</a>
+    <a href="#model"><b>9</b>Model</a>
   </nav>
 
   <!-- ===================== BUILD ===================== -->
@@ -165,6 +166,29 @@
     </div>
   </section>
 
+  <!-- ===================== VERIFY ===================== -->
+  <section class="block" id="verify">
+    <div class="block-head">
+      <div>
+        <div class="eyebrow">Verify</div>
+        <h2>Test the fact-check in the sim</h2>
+        <p>Each check takes a finding from the component fact-check and tests the part in the role it would play. It then varies the values that are still estimates, to see whether the verdict holds or flips. Checks use the library as edited here, plus the environment, activity and warning requirement from the scenario panel.</p>
+      </div>
+      <div class="btnrow">
+        <label class="f" style="min-width:150px"><span>Rounds per case</span><select id="vf_rounds"><option value="200">200 (fast)</option><option value="400" selected>400</option><option value="1000">1,000 (slow)</option></select></label>
+        <button class="btn primary" type="button" id="vf_run">Run all checks</button>
+        <button class="btn" type="button" id="vf_copy" disabled>Copy report (Markdown)</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Summary</h3><span class="mono" id="vf_meta">Not run yet</span></div>
+      <div class="progress" id="vf_prog" hidden><div></div></div>
+      <div class="tbl-wrap"><table id="vf_summary"></table></div>
+      <textarea id="vf_md" rows="6" hidden aria-label="Verification report"></textarea>
+    </div>
+    <div class="vgrid" id="vf_cards"></div>
+  </section>
+
   <!-- ===================== SAVED BUILDS ===================== -->
   <section class="block" id="compare">
     <div class="block-head">
@@ -246,7 +270,8 @@
           <li><b>Geometry.</b> Aim points spread over torso and head. The element is a flat plate at the standoff, pointed with cue bearing error plus actuator, frame and backlash error. Elevation shifts the crossing point. It protects only if the path crosses it and its level meets the threat's.</li>
           <li><b>Mass and balance.</b> Each item is placed on the body for head-borne mass and centre-of-mass shift against a 105 kg wearer with kit. Battery mass follows the chosen cell chemistry.</li>
           <li><b>Power.</b> Running power of sensors, compute and controller, plus idle or holding power of actuators and compressor duty, then 10% conversion loss and 90% usable capacity.</li>
-          <li><b>Readiness.</b> The weakest rated part sets system readiness, as with TRL. Unrated parts are listed, not scored.</li>
+          <li><b>Readiness.</b> The weakest rated part sets system readiness, as with TRL. Unrated parts are listed, not scored. Each part also carries a verification status from the desk fact-check (verified, end-of-life, research only, category, model unknown); end-of-life parts raise a procurement warning.</li>
+          <li><b>Pan and tilt.</b> With two driven axes the element is pointed in elevation as well, so a round's arrival angle no longer shifts where it crosses the element; the second motor adds mass, holding power and cost.</li>
           <li><b>Validation hook.</b> ANCILE reported 28.6 ± 8.3% interception of foam darts at 5–20 m/s, reliable at ≤ 7.5 m/s. Load the ANCILE example, set bearings to Bench and include the foam-dart threat to compare.</li>
         </ul>
       </div>
@@ -260,4 +285,5 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <!-- @js src/catalog.js -->
 <!-- @js src/engine.js -->
-<!-- @app src/ui/core.js src/ui/scene.js src/ui/build.js src/ui/views.js src/ui/trade.js src/ui/library.js src/ui/main.js -->
+<!-- @js src/verify.js -->
+<!-- @app src/ui/core.js src/ui/scene.js src/ui/build.js src/ui/views.js src/ui/trade.js src/ui/verify.js src/ui/library.js src/ui/main.js -->

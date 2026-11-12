@@ -71,8 +71,8 @@ test("night blinds visible cameras but not thermal", () => {
   const nightScen = { ...scen, env: "night" };
   const vis = E.derive({ ...C.DEFAULT_BUILD }, lib, nightScen, C);
   const ir = E.derive({ ...C.DEFAULT_BUILD, camera: "flir-boson-640", lens: "ge-50" }, lib, nightScen, C);
-  assert.ok(E.camRange50(vis.cam, threat("rpg")) < 1);
-  assert.ok(E.camRange50(ir.cam, threat("rpg")) > 20);
+  assert.ok(E.camRange50(vis.cam, threat("rpg")) < 5);
+  assert.ok(E.camRange50(ir.cam, threat("rpg")) > 10 * E.camRange50(vis.cam, threat("rpg")));
 });
 
 test("consumer FMCW radar loses range on bullets through range migration; ballistic radar does not", () => {

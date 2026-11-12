@@ -319,6 +319,7 @@ function derive(b, lib, scen, cat) {
   const needDrive = (a, slot) => { if (a && !provides.has(a.drive)) bad(`${a.name} needs a ${a.drive === "step" ? "step/dir" : a.drive === "dc" ? "DC H-bridge" : "PWM"} output; the controller and driver do not provide one.`, slot); };
   needDrive(aimAct, "aim"); needDrive(depAct, "deploy");
   let aim = null;
+  const axes = aimAct ? clamp(Math.round(b.aimAxes || 1), 1, 2) : 0;   // 2 = pan and tilt: the element also points in elevation
   const gearRatio = gear ? gear.ratio : frame ? frame.ratio || 1 : 1;
   if (aimAct) {
     if (aimAct.kind === "linear") bad(`${aimAct.name} is linear; it cannot slew a turret. Use it for deployment.`, "aim");
@@ -365,7 +366,7 @@ function derive(b, lib, scen, cat) {
   }
   const staticShield = shield && !aim && deployMode === "none";
   const resp = {
-    mode: respMode, aim, deployMode, deployMs, standoff, shield, shieldW, shieldH, shieldKg, staticShield,
+    mode: respMode, aim, axes, deployMode, deployMs, standoff, shield, shieldW, shieldH, shieldKg, staticShield,
     drvMs: drv ? drv.latMs : 0, posErr: aim ? aim.posErr : 0, mount: RESP_MOUNTS[b.respMount] || RESP_MOUNTS.back,
   };
 
@@ -382,7 +383,7 @@ function derive(b, lib, scen, cat) {
   if (ctrl) add("ctrl", `${ctrl.name} + haptics`, ctrl.mass / 1000 + HAPTICS, "--ok", [0, 1.42, 0.12], false, ctrl);
   if (drv && drv.mass > 0) add("drv", drv.name, drv.mass / 1000, "--ok", [0, 1.30, -0.18], false, drv);
   const rp = resp.mount.pos;
-  const respKg = (aimAct ? aimAct.mass : 0) / 1000 + (frame ? frame.mass : 0) / 1000 + (gear ? gear.mass : 0) / 1000 +
+  const respKg = (aimAct ? aimAct.mass * axes : 0) / 1000 + (frame ? frame.mass : 0) / 1000 + (gear ? gear.mass : 0) / 1000 +
     (depAct ? depAct.mass / 1000 : 0) + (deployMode === "pneumatic" ? ((pSrc ? pSrc.mass : 0) + (pValve ? pValve.mass : 0) + (pLine ? pLine.mass : 0)) / 1000 + CYLINDER : 0);
   add("resp", "Response mechanism", respKg, "--resp", rp, false);
   add("shield", shield ? shield.name : "Protective element", shieldKg, "--bad", rp, false, shield);
@@ -400,7 +401,7 @@ function derive(b, lib, scen, cat) {
   if (radSys) addP("Radar", b.radars * radar.power);
   if (ctrl) addP("Controller", ctrl.power);
   if (drv) addP("Driver", drv.power);
-  if (aimAct) addP("Aim actuator (idle)", aimAct.idleW || 0);
+  if (aimAct) addP(axes > 1 ? "Aim actuators (idle, ×2)" : "Aim actuator (idle)", (aimAct.idleW || 0) * axes);
   if (depAct) addP("Deploy actuator (idle)", depAct.idleW || 0);
   if (pSrc) addP("Compressor (average)", pSrc.power * (pSrc.duty || 0));
   const pLoad = pw.reduce((s, x) => s + x.w, 0);
@@ -408,13 +409,14 @@ function derive(b, lib, scen, cat) {
   const runtimeH = power > 0 ? (b.battWh * USABLE_CAPACITY) / power : Infinity;
 
   const costOf = (p, n = 1) => (p ? (p.cost || 0) * n : 0);
-  const cost = costOf(cam, b.pods) + costOf(lens, b.pods) + costOf(radar, b.radars) + costOf(comp) + costOf(ctrl) + costOf(drv) + costOf(aimAct) +
+  const cost = costOf(cam, b.pods) + costOf(lens, b.pods) + costOf(radar, b.radars) + costOf(comp) + costOf(ctrl) + costOf(drv) + costOf(aimAct, axes) +
     costOf(frame) + costOf(gear) + costOf(depAct) + costOf(pSrc) + costOf(pValve) + costOf(pLine) + costOf(shield);
 
   /* ---------------- readiness (weakest rated link) */
   const slots = [["Camera", cam], ["Lens", lens], ["Radar", radar], ["Compute", comp], ["Controller", ctrl], ["Driver", drv && drv.id !== "direct" ? drv : null],
     ["Aim actuator", aimAct], ["Turret frame", frame], ["Gearing", gear], ["Deploy actuator", depAct], ["Pressure source", pSrc], ["Valve", pValve], ["Line", pLine], ["Protective element", shield]]
-    .filter(([, p]) => p).map(([slot, p]) => ({ slot, part: p, rating: p.rating == null ? null : +p.rating }));
+    .filter(([, p]) => p).map(([slot, p]) => ({ slot, part: p, rating: p.rating == null ? null : +p.rating, status: p.status || "unverified" }));
+  slots.filter((s) => s.status === "eol").forEach((s) => warn(`${s.part.name} is end-of-life: it cannot be procured for a product.`, s.slot));
   const rated = slots.filter((s) => s.rating != null);
   const readiness = { slots, min: rated.length ? Math.min(...rated.map((s) => s.rating)) : null, mean: rated.length ? rated.reduce((a, s) => a + s.rating, 0) / rated.length : null,
     unrated: slots.filter((s) => s.rating == null).map((s) => s.slot), weakest: rated.length ? rated.reduce((a, s) => (s.rating < a.rating ? s : a)) : null };
@@ -442,14 +444,22 @@ function evaluate(sys, req) {
 function fmtRate(x) { return x >= 100 ? Math.round(x).toLocaleString("en-IE") : x >= 1 ? x.toFixed(1) : x >= 0.01 ? x.toFixed(2) : x > 0 ? x.toExponential(1) : "0"; }
 
 /* ------------------------------------------------------------------ one round */
+/* Signal gain from target size: a sub-pixel target gives its area fraction of one pixel; an extended target spreads
+ * over many pixels, and a detector that sums over the blob gains with the square root of the pixels covered. */
+const sizeGain = (area) => (area < 1 ? area : Math.sqrt(area));
+/* Range where the (smear-free) SNR equals k for contrast c, or 0 if it never does. */
+function rangeForSnr(cs, c, dM, k) {
+  const S1 = (c * cs.eta) / cs.sigma;
+  if (!(S1 > 0) || !(k > 0)) return 0;
+  const a = S1 >= k ? k / S1 : Math.pow(k / S1, 2);      // pixels the target must cover
+  return (dM / cs.ifov) * Math.sqrt(0.7853982 / a);
+}
 /* Camera path: per-frame detection probability from point-target SNR, M-of-N confirmation. */
 function camTrack(cs, th, r0, tImp, ph, mult, bOff, rng, keep) {
   const c = cs.contrast(th);
   const out = { frames: keep ? [] : null, firstDet: null, tConf: null, tAlert: null, rConf: null, pdConf: null, n: 0 };
   if (!(c > 0)) return out;
-  const S0 = (c * 0.7853982 * Math.pow(th.dM / cs.ifov, 2) * cs.eta) / cs.sigma;
-  const kLo = Math.max(0.5, cs.k - 3.5);
-  const rUb = Math.sqrt(S0 / kLo) * 1.05;
+  const rUb = rangeForSnr(cs, c, th.dM, Math.max(0.5, cs.k - 3.5)) * 1.05;
   const s0 = Math.max(0, r0 - rUb);
   const tStart = s0 >= r0 ? tImp : tAtDist(s0, th.v0, th.lam);
   const dt = cs.dt;
@@ -461,8 +471,7 @@ function camTrack(cs, th, r0, tImp, ph, mult, bOff, rng, keep) {
     const s = distAtT(t, th.v0, th.lam), R = r0 - s; if (R <= 0.05) break;
     const v = velAtDist(s, th.v0, th.lam);
     const ratio = th.dM / (R * cs.ifov);
-    const fill = Math.min(1, 0.7853982 * ratio * ratio);
-    let snr = (c * fill * cs.eta) / cs.sigma;
+    let snr = (c * sizeGain(0.7853982 * ratio * ratio) * cs.eta) / cs.sigma;
     const omega = (v * bOff) / (R * R);
     snr /= 1 + (omega * cs.tInt) / cs.ifov;
     if (cs.lwir) snr /= 1 + (cs.tauS * 2 * v) / R;
@@ -553,7 +562,7 @@ function simRound(sys, th, p, rng, keep) {
       off = reach ? gauss(rng) * Math.hypot(o.cueErr, R.posErr) : delta - R.aim.range / 2;
     }
     const tReady = o.tAlert + (R.drvMs + aimMs + (isFinite(R.deployMs) ? R.deployMs : 1e9)) / 1000;
-    o.resp = geometry(sys, th, p, rng, off, reach, tReady, tImp, aimMs);
+    o.resp = geometry(sys, th, p, rng, off, reach, tReady, tImp, aimMs, o.cueErr);
     if (!reach) o.outcome = "reach";
     else if (!o.resp.inTime) o.outcome = "slow";
     else if (R.mode === "mech") o.outcome = "reached";
@@ -561,13 +570,14 @@ function simRound(sys, th, p, rng, keep) {
   }
   return o;
 }
-function geometry(sys, th, p, rng, offDeg, reach, tReady, tImp, aimMs) {
+function geometry(sys, th, p, rng, offDeg, reach, tReady, tImp, aimMs, cueErr) {
   const R = sys.resp;
   const r = { aimMs, deployMs: R.deployMs, drvMs: R.drvMs, tReady, inTime: tReady <= tImp, reach, offDeg, hit: false, stops: false };
   if (!R.shield) return r;
   const s = R.standoff;
   const lateral = p.ax - s * Math.sin(offDeg * D2R);
-  const vertical = p.ay + s * Math.tan(clamp(p.el, -80, 80) * D2R);
+  const elOff = R.axes === 2 && reach ? gauss(rng) * Math.hypot(cueErr || 0, R.posErr) : clamp(p.el, -80, 80);
+  const vertical = p.ay + s * Math.tan(elOff * D2R);
   r.hit = Math.abs(offDeg) < 90 && Math.abs(lateral) <= R.shieldW / 2 && Math.abs(vertical) <= R.shieldH / 2;
   r.stops = (LEVEL_RANK[R.shield.level] ?? 0) >= (LEVEL_RANK[th.req] ?? 0);
   return r;
@@ -575,6 +585,7 @@ function geometry(sys, th, p, rng, offDeg, reach, tReady, tImp, aimMs) {
 
 /* ------------------------------------------------------------------ Monte Carlo */
 function drawBearing(kind, rng) {
+  if (kind === "boresight") return -1 + rng() * 2;
   if (kind === "bench") return -5 + rng() * 10;
   if (kind === "front") return -60 + rng() * 120;
   if (kind === "flank") return (rng() < 0.5 ? -1 : 1) * (60 + rng() * 60);
@@ -583,7 +594,7 @@ function drawBearing(kind, rng) {
 }
 function drawRound(th, scen, rng) {
   return { r0: th.rmin + rng() * (th.rmax - th.rmin), az: drawBearing(scen.bearing, rng), el: th.elMin + rng() * (th.elMax - th.elMin),
-    ph: rng(), rph: rng(), ax: (rng() * 2 - 1) * 0.17, ay: -0.32 + rng() * 0.72 };
+    ph: rng(), rph: rng(), ax: (rng() * 2 - 1) * 0.17 * (scen.aimSpread || 1), ay: 0.04 + (rng() * 0.72 - 0.36) * (scen.aimSpread || 1) };
 }
 function runThreat(sys, th0, scen, N, seed) {
   const th = threatSI(th0), rng = mulberry32(seed >>> 0);
@@ -624,16 +635,15 @@ function runScenario(sys, threats, scen, N, seed) {
 /* Detection range where the per-frame Pd is 50% for one pod, ignoring smear (for display). */
 function camRange50(cs, th0) {
   if (!cs) return null;
-  const th = threatSI(th0), c = cs.contrast(th);
-  if (!(c > 0) || (c * cs.eta) / cs.sigma < cs.k) return 0;   // even a pixel-filling target stays under threshold
-  return Math.sqrt((c * 0.7853982 * Math.pow(th.dM / cs.ifov, 2) * cs.eta) / cs.sigma / cs.k);
+  const th = threatSI(th0);
+  return rangeForSnr(cs, cs.contrast(th), th.dM, cs.k);
 }
 function radRange(rs, th0, v) { if (!rs) return null; const th = threatSI(th0); return rs.rdet(th.rcs, v == null ? th.v0 : v); }
 
 return {
   VERSION, D2R, LEVEL_RANK, OUTCOMES, GRID, POD_MOUNTS, RADAR_RING, RESP_MOUNTS,
   mulberry32, erfc, Q, Phi, choose, clamp, angDiff, wrap180, quantile, gauss,
-  threatSI, tAtDist, distAtT, velAtDist, dirVec, toLocal, bodyOccluders, rayHits, cellIndex, coverageShare,
+  threatSI, tAtDist, distAtT, velAtDist, sizeGain, rangeForSnr, dirVec, toLocal, bodyOccluders, rayHits, cellIndex, coverageShare,
   makeLibrary, derive, evaluate, simRound, runThreat, runScenario, drawRound, camRange50, radRange, fmtRate,
 };
 });

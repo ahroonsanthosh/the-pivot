@@ -13,6 +13,7 @@ Open `sim/index.html` in a browser. It is a single file and needs no server; thr
 | One round | Frame-by-frame trace. Each tick shows the per-frame detection probability. The trace runs through M-of-N confirmation, pipeline latency and the alert, then the driver, slew and deploy times, and ends at impact. |
 | Scenario | Monte Carlo over a weighted threat mix, environment (daylight to night), wearer activity, bearing distribution and requirements. Every round ends in one outcome, so the table shows which link fails. |
 | Trade study | Tick candidate parts in any slot and run every combination. Scatter of objective against mass, power, cost, readiness or runtime, with the trade-off front, a ranked table, CSV copy and one-click load. |
+| Verify | Ten checks that take the team's component fact-check into the sim. Each tests a part in its role, then varies the still-estimated values to see whether the verdict holds. A Markdown report is copied from the page or generated with `sim/tools/verify.js`. |
 | Saved builds | Side-by-side comparison of saved builds. Four examples are included, among them an ANCILE-style reference. |
 | Parts library | Every part with its rating, the reason for it, estimated fields marked "est." and source links. Add, edit, duplicate or hide parts and threats. Export or import the changes as JSON to share them. |
 
@@ -31,6 +32,29 @@ Open `sim/index.html` in a browser. It is a single file and needs no server; thr
 - **Readiness:** the weakest rated part, as with TRL.
 
 The page's Model section lists every equation and simplification.
+
+## Verification
+
+`sim/VERIFICATION.md` is the current report. Re-run it after changing parts:
+
+```bash
+node sim/tools/verify.js --out sim/VERIFICATION.md
+```
+
+| Check | Sim verdict |
+|---|---|
+| TI IWR6843AOP as a threat cue | Not supported for small arms: about +90 dB short on 5.56 mm (+72 dB with a ballistic waveform); cues FPV drones in about half of front-quarter runs |
+| Ariel 2025 W-band radar in real time | Depends on unknowns: useful in-beam below about 10 ms of processing, but one beam watches about 1% of the ground band |
+| Daheng MER2-160 and XIMEA xiQ | Not supported for rifle rounds. Pistol rounds are cued by the 500 fps xiQ, which is end-of-life; the Daheng needs ROI or more USB bandwidth to match it |
+| Orin NX 16GB against Orin Nano Super | Reference: USB bandwidth, not TOPS, limits Daheng pods to 2 at full rate on either |
+| Teensy 4.1, S32K344, Uno | Supported: controller latency is under 1% of the response budget; choose on safety case and packaging |
+| ANCILE assembly mass | Itemised parts add to 925 g against the stated 1.257 kg; 332 g is not accounted for |
+| ANCILE result reproduced | The sim is optimistic: about 59 ms of hidden delay would bring its 12 m/s cut-off to the paper's 7.5–10 m/s |
+| Kevlar sail 100 × 100 mm | Not supported: about 5% of torso and head paths even with perfect pointing; 90% needs about 490 × 650 mm |
+| Certified armour baseline | Reference: a worn III-class plate stops more frontal rifle rounds than any active build here |
+| ANCILE pneumatics (unidentified) | Depends on unknowns: deployment 23–90 ms across plausible valve, pressure and line values |
+
+Figures are from the committed report at 600 rounds per case. The page's Verify section reruns them against your edited library and scenario.
 
 ## Ratings and data
 
@@ -51,11 +75,13 @@ Notable findings from the spec check:
 sim/
   src/catalog.js    parts, threats, environments, editor schema, example builds
   src/engine.js     model (no DOM; runs in Node and the browser)
+  src/verify.js     verification checks and report (no DOM)
   src/ui/*.js       page modules: state, 3D scene, build rail, views, trade study, library
   src/page.html     markup; src/styles.css styles
   build.sh          inlines everything into wearable-aps-sim.html and index.html
   test/             engine tests (node --test)
   tools/trade.js    headless trade study to CSV
+  tools/verify.js   runs every verification check, writes VERIFICATION.md
 ```
 
 Rebuild the page after editing anything in `sim/src`:

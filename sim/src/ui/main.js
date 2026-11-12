@@ -27,7 +27,7 @@ renderShotRail(); syncShotRail();
 renderScenRail(); syncScenRail(); wirePerfTable();
 wireCoverage(); wireCompare();
 renderTradeRail(); wireTradeRail(); wireTradeOutput();
-initLibrary(); renderLibrary();
+initLibrary(); renderLibrary(); initVerify();
 
 $("btnFire").addEventListener("click", () => { renderShot(); Scene.play(); });
 $("btnFov").addEventListener("click", (e) => { const on = Scene.toggleFov(); e.currentTarget.textContent = on ? "Hide fields of view" : "Show fields of view"; e.currentTarget.setAttribute("aria-pressed", String(on)); });

@@ -238,6 +238,7 @@ function renderScenRail() {
       <label class="f"><span>Environment</span><select id="sc_env">${CAT.ENVIRONMENTS.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join("")}</select><small class="hint" id="sc_envHint"></small></label>
       <div class="f"><span class="lbl">Wearer activity</span><div class="seg" id="sc_act" role="group" aria-label="Wearer activity">${CAT.ACTIVITIES.map((a) => `<button type="button" data-v="${a.id}">${esc(a.name.split(",")[0].split(" /")[0])}</button>`).join("")}</div></div>
       <div class="f"><span class="lbl">Threat bearings</span><div class="seg" id="sc_bear" role="group" aria-label="Threat bearings">${BEARINGS.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join("")}</div></div>
+      <label class="f"><span>Aim-point spread <b id="sc_spreadOut"></b></span><input type="range" id="sc_spread" min="0.2" max="1.5" step="0.05"></label>
       <label class="f"><span>Warning needed before impact <b id="sc_needOut"></b></span><input type="range" id="sc_need" min="0" max="1000" step="1"></label>
       <label class="f"><span>Rounds per threat <b id="sc_roundsOut"></b></span><input type="range" id="sc_rounds" min="100" max="3000" step="100"></label>
     </fieldset>
@@ -256,6 +257,7 @@ function renderScenRail() {
   $("sc_act").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { S.scen.activity = b.dataset.v; onScenChanged(); } });
   $("sc_bear").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { S.scen.bearing = b.dataset.v; onScenChanged(); } });
   $("sc_need").addEventListener("input", (e) => { S.scen.needMs = +e.target.value; onScenChanged(); });
+  $("sc_spread").addEventListener("input", (e) => { S.scen.aimSpread = +e.target.value; onScenChanged(); });
   $("sc_rounds").addEventListener("input", (e) => { S.scen.rounds = +e.target.value; syncScenRail(); schedulePerf(); persist(); });
   f.addEventListener("change", (e) => {
     const id = e.target.id;
@@ -269,7 +271,9 @@ function syncScenRail() {
   document.querySelectorAll("#sc_act button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === sc.activity)));
   document.querySelectorAll("#sc_bear button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === sc.bearing)));
   if (document.activeElement !== $("sc_need")) $("sc_need").value = sc.needMs;
-  $("sc_needOut").textContent = sc.needMs + " ms"; $("sc_rounds").value = sc.rounds; $("sc_roundsOut").textContent = sc.rounds.toLocaleString("en-IE");
+  $("sc_needOut").textContent = sc.needMs + " ms";
+  if (document.activeElement !== $("sc_spread")) $("sc_spread").value = sc.aimSpread || 1;
+  $("sc_spreadOut").textContent = `×${(sc.aimSpread || 1).toFixed(2)} ${(sc.aimSpread || 1) >= 0.95 && (sc.aimSpread || 1) <= 1.05 ? "torso and head" : (sc.aimSpread || 1) < 1 ? "tighter" : "wider"}`; $("sc_rounds").value = sc.rounds; $("sc_roundsOut").textContent = sc.rounds.toLocaleString("en-IE");
   const html = THREATS.map((t) => `<label for="tw_${esc(t.id)}"><span>${esc(t.name)}</span><input type="number" id="tw_${esc(t.id)}" min="0" max="10" step="0.5" value="${t.id in sc.threats ? sc.threats[t.id] : 1}"></label>`).join("");
   const box = $("sc_threats"); if (box.dataset.html !== html && !box.contains(document.activeElement)) { box.innerHTML = html; box.dataset.html = html; }
   for (const k of Object.keys(CAT.DEFAULT_REQ)) { const el = $("rq_" + k); if (el && document.activeElement !== el) el.value = S.req[k]; }

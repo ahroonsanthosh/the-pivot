@@ -102,6 +102,25 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .rchip.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .rchip.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
 .rchip.na { border-color: var(--line); color: var(--muted); }
+.schip { display: inline-block; font-family: var(--font-data); font-size: 10px; padding: 0 5px; border-radius: 2px; line-height: 15px; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); }
+.schip.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
+.schip.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); color: var(--warn); }
+.schip.bad { border-color: color-mix(in srgb, var(--bad) 55%, transparent); color: var(--bad); }
+.vchip { display: inline-block; font-family: var(--font-data); font-size: 11px; padding: 2px 8px; border-radius: 3px; white-space: nowrap; background: var(--surface-2); color: var(--ink); }
+.vchip.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+.vchip.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.vchip.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 14px; }
+.vcard { display: grid; gap: 10px; align-content: start; }
+.vcard .panel-head { margin-bottom: 0; align-items: start; }
+.vcard h4 { font-family: var(--font-display); font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.vcard .vq { font-size: 13px; }
+.vresult { font-size: 13.5px; padding: 10px 12px; background: var(--surface-2); border-radius: 3px; }
+.vdesk summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+.vdesk ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; }
+.vparts { display: grid; gap: 3px; }
+.vpart { font-size: 12px; display: inline-flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+td.vhead { font-size: 12px; min-width: 320px; max-width: 520px; }
 .estchip { font-family: var(--font-data); font-size: 10px; color: var(--warn); }
 .star { color: var(--accent); font-size: 11px; }
 
