@@ -587,6 +587,7 @@ const STATUS = [
   ["research", "Research result only"],
   ["category", "Category or generic reference"],
   ["unidentified", "Mentioned, model undisclosed"],
+  ["claimed", "Vendor claims only, not independently tested"],
   ["unverified", "Not yet verified"],
 ];
 
@@ -599,6 +600,7 @@ const COMMON_FIELDS = [
   { k: "shortlist", label: "Retained as product candidate", type: "bool" },
   { k: "status", label: "Verification status", type: "sel", opts: STATUS },
   { k: "statusNote", label: "Verification finding", type: "textarea" },
+  { k: "export", label: "Export or sales restriction (blank if none)", type: "text" },
   { k: "mass", label: "Mass", unit: "g", type: "num", min: 0, step: 0.1 },
   { k: "power", label: "Power while running", unit: "W", type: "num", min: 0, step: 0.05 },
   { k: "cost", label: "Unit cost", unit: "€", type: "num", min: 0, step: 1 },
@@ -656,6 +658,9 @@ const CATEGORIES = {
       { k: "bearingErr", label: "Bearing error (1σ)", unit: "°", type: "num", min: 0, step: 0.5 },
       { k: "confirm", label: "Frames to confirm a track", type: "num", min: 1, step: 1 },
       { k: "farH", label: "False cues per hour (alone)", unit: "/h", type: "num", min: 0, step: 1 },
+      { k: "apertures", label: "Apertures per unit (spread round the mount)", type: "num", min: 1, max: 8, step: 1, optional: true },
+      { k: "mount", label: "Mounted on", type: "sel", opts: [["vest", "Plate carrier"], ["helmet", "Helmet"]] },
+      { k: "ownBattery", label: "Runs on its own battery", type: "bool" },
     ],
   },
   compute: {
@@ -758,6 +763,9 @@ const S = {
   ariel2020: { label: "Balal et al., Sensors 20:3284 (2020)", url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC7308985" },
   labradar: { label: "LabRadar LX review (SSUSA)", url: "https://ssusa.org/content/preview-labradar-lx-compact-shooting-chronograph" },
   garmin: { label: "Garmin Xero C1 Pro manual", url: "https://static.garmin.com/pumac/xeroc1pro_OM_EN-SG.pdf" },
+  spidrNews: { label: "Syntonics SPiDR-Tactical announcement (everythingRF, Apr 2024)", url: "https://www.everythingrf.com/news/details/18185-syntonics-introduces-battery-powered-radar-that-fits-under-the-helmet-to-detect-and-geolocate-hostile-shooters" },
+  spidrSbir: { label: "SBIR award D16PC00180: SPiDR-Tactical prototype", url: "https://www.sbir.gov/awards/160718" },
+  spidrHelo: { label: "SBIR award: SPiDR helicopter HFI (UWB noise radar)", url: "https://www.sbir.gov/awards/145095" },
   kurfs: { label: "RTX KuRFS", url: "https://www.rtx.com/en/raytheon/what-we-do/integrated-air-and-missile-defense/kurfs" },
   ximea: { label: "XIMEA MQ003MG-CM", url: "https://www.ximea.com/en/products/usb3-vision-cameras-xiq-line/mq003mg-cm" },
   daheng: { label: "Daheng MER2-160-227U3M datasheet (via VA Imaging)", url: "https://va-imaging.com/products/usb-camera-3-0-1-6mp-monochrome-sony-imx273-mer2-160-227u3m" },
@@ -808,7 +816,7 @@ const PARTS = [
     desc: "1.6 MP global shutter on MIPI CSI-2 (Raspberry Pi Global Shutter Camera). 60 fps full frame; cropped strips reach about 400–536 fps. ANCILE processed at 140 fps.",
     band: "vis", iface: "mipi", hres: 1456, vres: 1088, fps: 60, fpsMax: 536, bits: 10, pitch: 3.45, noise: 0.022, minExpUs: 30, outLatMs: 0, linkGbps: 1.6,
     mass: 34, power: 0.6, cost: 50, dims: "38 × 38 × 19.8", est: ["power", "noise", "minExpUs", "linkGbps"], src: [S.pigs, S.imx296crop, S.ancile] },
-  { cat: "camera", id: "flir-boson-640", status: "verified", statusNote: "Vendor datasheet; export-controlled.", name: "Teledyne FLIR Boson 640 (suggested)", vendor: "Teledyne FLIR", rating: null,
+  { cat: "camera", id: "flir-boson-640", export: "EAR export-controlled (6A003); non-US buyers often get the 9 Hz version", status: "verified", statusNote: "Vendor datasheet; export-controlled.", name: "Teledyne FLIR Boson 640 (suggested)", vendor: "Teledyne FLIR", rating: null,
     note: "Suggested extra, not on the rated list. Export-controlled: non-US buyers often get the 9 Hz version.",
     desc: "12 µm uncooled LWIR core. Rounds heat in flight, so thermal contrast is high, but 60 Hz, a 7–12 ms bolometer time constant and up to 25 ms video latency make it slow.",
     band: "lwir", iface: "usb2", hres: 640, vres: 512, fps: 60, fpsMax: 60, bits: 8, pitch: 12, noise: 0.006, tauMs: 10, outLatMs: 20, linkGbps: 0.35,
@@ -818,7 +826,7 @@ const PARTS = [
     desc: "320 × 320 event sensor on 1-lane MIPI. No frames: each pixel reports brightness changes as they happen.",
     band: "event", iface: "mipi", hres: 320, vres: 320, fps: 1, fpsMax: 1, bits: 32, pitch: 6.3, noise: 0.02, latUs: 150, evThresh: 0.25, bgRate: 0.2, evRate: 8, outLatMs: 0, linkGbps: 1.0,
     mass: 3, power: 0.023, cost: 370, dims: "3 × 4 die; OpenMV module", est: ["noise", "bgRate", "evRate", "evThresh", "linkGbps"], src: [S.genx] },
-  { cat: "camera", id: "prophesee-evk4", status: "verified", statusNote: "Vendor manual; sold excluding military and defence industries.", name: "Prophesee EVK4 HD / IMX636 (suggested)", vendor: "Prophesee / Sony", rating: null,
+  { cat: "camera", id: "prophesee-evk4", export: "Vendor terms exclude military and defence customers", status: "verified", statusNote: "Vendor manual; sold excluding military and defence industries.", name: "Prophesee EVK4 HD / IMX636 (suggested)", vendor: "Prophesee / Sony", rating: null,
     note: "Suggested extra, not on the rated list. Prophesee sells the EVK4 excluding military and defence industries; the IMX636 sensor itself would need another route.",
     desc: "1280 × 720 event sensor over USB3. Fine pixel angle with sub-millisecond response; event rate climbs fast when the wearer moves.",
     band: "event", iface: "usb3", hres: 1280, vres: 720, fps: 1, fpsMax: 1, bits: 32, pitch: 4.86, noise: 0.02, latUs: 220, evThresh: 0.2, bgRate: 0.1, evRate: 40, outLatMs: 0, linkGbps: 1.6,
@@ -865,6 +873,14 @@ const PARTS = [
     mode: "chronograph", ballistic: true, freq: 24, bw: 0.1, tcUs: 100, chirps: 1, tx: 1, rx: 1, frameHz: 100, rRef: 700, procMs: 400, fovAz: 10, fovEl: 10,
     bearingErr: 90, confirm: 1, farH: 0, mass: 105.6, power: 1.5, cost: 560, dims: "77 × 60.5 × 34.4",
     est: ["freq", "bw", "tcUs", "frameHz", "rRef", "procMs", "fovAz", "fovEl", "power"], src: [S.garmin] },
+  { cat: "radar", id: "syntonics-spidr-tactical", status: "claimed", statusNote: "Vendor claims from the April 2024 announcement, no independent test data: detects 99.9+% of fast incoming projectiles passing within 10 m, reports range to shooters up to 500 m, nil false alarms, 100 g including batteries, 360° stare from under the helmet cover. USSOCOM SBIR Phase II built a Mark 1 prototype (2016–2018, US$2.09 M), described as the first of three efforts toward a mature system. Price not published.",
+    name: "Syntonics SPiDR-Tactical", vendor: "Syntonics (Ironwave Technologies)", rating: null,
+    note: "Not on the rated list. Purpose-built helmet hostile-fire radar; every performance figure is a vendor claim.",
+    desc: "Ultra-wideband noise radar in a conformal film under the helmet cover, staring 360° to detect incoming small-arms rounds and back-locate the shooter. Built for hostile-fire detection. Detection range is set so a 5.56 mm round is seen at the claimed 10 m. The band is not published; 5 GHz is a placeholder.",
+    mode: "tracker", ballistic: true, apertures: 4, mount: "helmet", ownBattery: true, export: "ITAR-restricted; export from the US needs authorisation",
+    freq: 5, bw: 2, tcUs: 1, chirps: 1, tx: 1, rx: 1, frameHz: 2000, rRef: 119, procMs: 2, fovAz: 50, fovEl: 60,
+    bearingErr: 5, confirm: 2, farH: 0.1, mass: 100, power: 0.5, cost: 0, dims: "conformal film under the helmet cover",
+    est: ["freq", "bw", "tcUs", "chirps", "frameHz", "rRef", "procMs", "fovAz", "fovEl", "bearingErr", "confirm", "farH", "power", "cost", "apertures"], src: [S.spidrNews, S.spidrSbir, S.spidrHelo] },
   { cat: "radar", id: "raytheon-kurfs", status: "verified", statusNote: "Exists and fielded; mass, power and ballistic range unpublished.", name: "Raytheon KuRFS", vendor: "Raytheon (RTX)", rating: 2,
     note: "Actual ballistic detection, but military-scale packaging, not wearable.",
     desc: "Ku-band AESA with 360° coverage, about 1.2 m across on a pallet. Cues C-RAM, SHORAD and counter-UAS weapons; RTX claims small drones beyond 15 km. Mass and power are not published.",
@@ -1398,7 +1414,8 @@ function derive(b, lib, scen, cat) {
       }
       return R;
     };
-    radars = ringPlacement(RADAR_RING, b.radars, 0, occ);
+    const helmetRadar = radar.mount === "helmet";
+    radars = ringPlacement(helmetRadar ? POD_MOUNTS.helmet : RADAR_RING, b.radars * Math.max(1, Math.round(radar.apertures || 1)), 0, occ);
     radFov = { az: radar.fovAz, el: radar.fovEl };
     if (radar.mode === "chronograph") warn(`${radar.name} reports shot records after the event; it cannot cue a response in time.`, "radar");
     radSys = { part: radar, n: b.radars, lambda, dR, loopS, burstS, vAmb, frameS: 1 / radar.frameHz, latS: burstS / 2 + radar.procMs / 1000,
@@ -1478,7 +1495,10 @@ function derive(b, lib, scen, cat) {
   const add = (key, name, kg, color, pos, head, part) => { if (kg > 0) items.push({ key, name, mass: kg, color, y: pos[1], z: pos[2], head: !!head, part }); };
   if (cam && b.pods > 0) add("cams", `Camera pods ×${b.pods}`, b.pods * ((cam.mass + (lens ? lens.mass : 0)) / 1000 + POD_HOUSING), "--accent", [0, pm.y, 0], pm.head, cam);
   if (cam && b.pods > 0) add("harness", `${cam.iface === "mipi" ? "MIPI" : "USB"} harness`, b.pods * (cam.iface === "mipi" ? HARNESS_MIPI : HARNESS_USB), "--muted", [0, (pm.y + 1.25) / 2, -0.05], false);
-  if (radar && b.radars > 0) add("radar", `${radar.name} ×${b.radars}`, b.radars * (radar.mass / 1000 + RADAR_HOUSING), "--radar", [0, RADAR_RING.y, 0.1], false, radar);
+  if (radar && b.radars > 0) {
+    const onHelmet = radar.mount === "helmet";
+    add("radar", `${radar.name} ×${b.radars}`, b.radars * (radar.mass / 1000 + (onHelmet ? 0 : RADAR_HOUSING)), "--radar", [0, onHelmet ? POD_MOUNTS.helmet.y : RADAR_RING.y, 0.1], onHelmet, radar);
+  }
   if (comp) add("compute", `${comp.name} + enclosure`, (comp.mass + (comp.enclosure || 0)) / 1000, "--sensor", [0, 1.30, -0.20], false, comp);
   const battKg = b.battWh / chem.whkg;
   add("batt", `Battery ${b.battWh} Wh`, battKg, "--warn", [0, 1.10, -0.20], false);
@@ -1500,7 +1520,7 @@ function derive(b, lib, scen, cat) {
   const addP = (name, w) => { if (w > 0) pw.push({ name, w }); };
   if (cam && camSys) addP("Cameras", camSys.active * cam.power);
   if (comp) addP("Compute", comp.power);
-  if (radSys) addP("Radar", b.radars * radar.power);
+  if (radSys && !radar.ownBattery) addP("Radar", b.radars * radar.power);
   if (ctrl) addP("Controller", ctrl.power);
   if (drv) addP("Driver", drv.power);
   if (aimAct) addP(axes > 1 ? "Aim actuators (idle, ×2)" : "Aim actuator (idle)", (aimAct.idleW || 0) * axes);
@@ -1519,6 +1539,8 @@ function derive(b, lib, scen, cat) {
     ["Aim actuator", aimAct], ["Turret frame", frame], ["Gearing", gear], ["Deploy actuator", depAct], ["Pressure source", pSrc], ["Valve", pValve], ["Line", pLine], ["Protective element", shield]]
     .filter(([, p]) => p).map(([slot, p]) => ({ slot, part: p, rating: p.rating == null ? null : +p.rating, status: p.status || "unverified" }));
   slots.filter((s) => s.status === "eol").forEach((s) => warn(`${s.part.name} is end-of-life: it cannot be procured for a product.`, s.slot));
+  slots.filter((s) => s.part.export).forEach((s) => warn(`${s.part.name}: ${s.part.export}.`, s.slot));
+  slots.filter((s) => s.status === "claimed").forEach((s) => warn(`${s.part.name}: performance figures are vendor claims with no independent test data.`, s.slot));
   const rated = slots.filter((s) => s.rating != null);
   const readiness = { slots, min: rated.length ? Math.min(...rated.map((s) => s.rating)) : null, mean: rated.length ? rated.reduce((a, s) => a + s.rating, 0) / rated.length : null,
     unrated: slots.filter((s) => s.rating == null).map((s) => s.slot), weakest: rated.length ? rated.reduce((a, s) => (s.rating < a.rating ? s : a)) : null };
@@ -1888,6 +1910,50 @@ const CHECKS = [
           "Whether it can run in real time is the open question: the paper recorded to an oscilloscope and processed afterwards. Below about 10 ms of processing the cue is useful; above 30 ms it mostly arrives after impact.",
         ],
         sens: [`Halving or doubling the estimated reference range moves the in-beam timely-cue rate for 5.56 mm from ${pct(sensLo)} to ${pct(sensHi)} at 3 ms processing.`],
+      };
+    },
+  },
+  {
+    id: "spidr-tactical", title: "Syntonics SPiDR-Tactical: what its claims would buy", parts: ["syntonics-spidr-tactical"],
+    question: "If the vendor's claims hold, how much warning does the helmet radar give for each threat, is it enough for any response in the library, and how far can the claims slip before it stops mattering?",
+    method: "Radar-only build with the helmet unit, rounds from any bearing. Detection range is calibrated so a 5.56 mm round is seen at the claimed 10 m and scales with each threat's radar cross-section. Warnings are compared with the fastest response chain in the library and with human reaction time (250 ms). Then the claimed range and the unpublished latency are degraded.",
+    run(ctx) {
+      const id = "syntonics-spidr-tactical"; if (!has(ctx, id)) return na([id]);
+      const P = ctx.lib.byId[id], b = { ...BASE, radar: id, radars: 1, fusion: "radar" }, sc = { bearing: "uniform" }, need = ctx.scen.needMs;
+      const { sys } = sim(ctx, b, sc);
+      const chain = { ...BASE, controller: has(ctx, "teensy41") ? "teensy41" : "host-gpio", driver: has(ctx, "tmc2209") ? "tmc2209" : "direct", aim: has(ctx, "nema17-pancake") ? "nema17-pancake" : "none",
+        deploy: "pneumatic", pSource: has(ctx, "co2-12g") ? "co2-12g" : "ancile-compressor", pValve: "ancile-valve", pLine: "acrylic-hose", shield: has(ctx, "ancile-kevlar-100") ? "ancile-kevlar-100" : "none" };
+      const R = sim(ctx, chain, {}).sys.resp;
+      const deployOnly = R.drvMs + R.deployMs, slewDeploy = deployOnly + (R.aim ? R.aim.time(90) : 0);
+      const share = (r, lim) => r.warns.filter((w) => w >= lim).length / r.N;
+      const ids = ["9mm", "556", "762r", "762n", "127", "40mm", "fpv", "rpg"].filter((t) => thr(ctx, t)), res = {};
+      const rows = ids.map((t) => {
+        const th = thr(ctx, t), r = (res[t] = run(ctx, b, t, sc));
+        return [th.name, metres(E.radRange(sys.rad, th)), ms(r.medWarn), pct(share(r, need)), pct(share(r, deployOnly)), pct(share(r, slewDeploy)), pct(share(r, 250))];
+      });
+      const deg = (patch) => run(ctx, b, "556", sc, { lib: libWith(ctx, id, patch), N: 300 });
+      const has556 = !!res["556"];
+      const r05 = has556 ? deg({ rRef: P.rRef * 0.5 }) : null, r03 = has556 ? deg({ rRef: P.rRef * 0.3 }) : null;
+      const l5 = has556 ? deg({ procMs: 5 }) : null, l10 = has556 ? deg({ procMs: 10 }) : null, r2 = has556 ? deg({ rRef: P.rRef * 2 }) : null;
+      const smallIds = ids.filter((t) => thr(ctx, t).group === "small");
+      const smallSlew = smallIds.length ? Math.max(...smallIds.map((t) => share(res[t], slewDeploy))) : 0;
+      const smallDeploy = smallIds.length ? Math.max(...smallIds.map((t) => share(res[t], deployOnly))) : 0;
+      const air = E.coverageShare(sys.coverage, "rad", 20, 80);
+      const s556 = res["556"], th556 = thr(ctx, "556");
+      return {
+        verdict: "depends",
+        headline: `If the claims hold, it is the only wearable sensor in the library that cues rifle rounds from every direction: ${s556 ? `${pct(share(s556, need))} of 5.56 mm rounds get ${need} ms, with a median of ${ms(s556.medWarn)}` : "small-arms rounds are cued"}. That is a hostile-fire warning, not a trigger for protection: the fastest mechanism here needs ${ms(deployOnly)} just to deploy and ${ms(slewDeploy)} to slew 90° and deploy, which at most ${pct(Math.max(smallDeploy, smallSlew))} of small-arms rounds allow.${res.fpv ? ` It would cue protection against FPV drones (${pct(share(res.fpv, slewDeploy))} with time to slew and deploy)` : ""}${res["40mm"] ? ` and 40 mm grenades (${pct(share(res["40mm"], slewDeploy))})` : ""}. Every figure rests on vendor claims, and the part is ITAR-restricted.`,
+        table: { head: ["Threat", "Detection range (claim-scaled)", "Median warning", `≥ ${need} ms`, `≥ ${ms(deployOnly)} (deploy only)`, `≥ ${ms(slewDeploy)} (slew + deploy)`, "≥ 250 ms (human)"], rows },
+        findings: [
+          `100 g on the helmet with its own battery, and the only radar here that watches all round from one unit (${pct(sys.radGround)} of the ground band, ${pct(air)} of the air band).`,
+          th556 ? `Warning on rifle rounds is about the time a round takes to fly the last 10 m, roughly ${ms(10 / 0.85)} at 850 m/s, less processing. The claimed range to the shooter (up to 500 m) comes from back-tracking the round's path: useful for return fire and logging, not for protection.` : null,
+          "The last public contract built a Mark 1 prototype (2016–2018), described as the first of three efforts toward a mature system. No later test results are published.",
+        ].filter(Boolean),
+        sens: has556 ? [
+          `If detection range is half the claim, ${pct(share(r05, need))} of 5.56 mm rounds still get ${need} ms (median ${ms(r05.medWarn)}); at 30% of the claim, ${pct(share(r03, need))}.`,
+          `Latency is not published (2 ms assumed). At 5 ms, ${pct(share(l5, need))} of 5.56 mm rounds get ${need} ms; at 10 ms, ${pct(share(l10, need))}.`,
+          `Even at twice the claimed range, the median 5.56 mm warning is ${ms(r2.medWarn)} and ${pct(share(r2, deployOnly))} of rounds leave the ${ms(deployOnly)} a deploy-only mechanism needs.`,
+        ] : [],
       };
     },
   },
@@ -2267,8 +2333,8 @@ const persist = debounce(() => {
 
 /* ------------------------------------------------------------------ part presentation */
 const STATUS_NAME = Object.fromEntries(CAT.STATUS);
-const STATUS_SHORT = { verified: "verified", eol: "end-of-life", research: "research only", category: "category", unidentified: "model unknown", unverified: "unverified" };
-const STATUS_CLS = { verified: "ok", eol: "bad", research: "warn", category: "na", unidentified: "warn", unverified: "na" };
+const STATUS_SHORT = { verified: "verified", eol: "end-of-life", research: "research only", category: "category", unidentified: "model unknown", claimed: "vendor claims", unverified: "unverified" };
+const STATUS_CLS = { verified: "ok", eol: "bad", research: "warn", category: "na", unidentified: "warn", claimed: "warn", unverified: "na" };
 function statusChip(p) { const s = (p && p.status) || "unverified"; return `<span class="schip ${STATUS_CLS[s] || "na"}" title="${esc((p && p.statusNote) || STATUS_NAME[s] || "")}">${STATUS_SHORT[s] || s}</span>`; }
 const ratingClass = (r) => (r == null ? "na" : r >= 7 ? "ok" : r >= 4 ? "warn" : "bad");
 function ratingChip(p) {
@@ -2302,7 +2368,7 @@ function partSummary(p) {
 function partHint(p) {
   if (!p) return "";
   const est = (p.est || []).length;
-  return `${ratingChip(p)}${statusChip(p)}${p.shortlist ? '<span class="star" title="Retained as product candidate">★</span>' : ""}<span>${esc(partSummary(p))}</span>${est ? `<span class="estchip" title="Estimated fields: ${esc(p.est.join(", "))}">${est} est.</span>` : ""}`;
+  return `${ratingChip(p)}${statusChip(p)}${p.export ? `<span class="schip bad" title="${esc(p.export)}">restricted</span>` : ""}${p.shortlist ? '<span class="star" title="Retained as product candidate">★</span>' : ""}<span>${esc(partSummary(p))}</span>${est ? `<span class="estchip" title="Estimated fields: ${esc(p.est.join(", "))}">${est} est.</span>` : ""}`;
 }
 function gauge(label, value, unit, sub, frac, level) {
   const w = Math.max(0, Math.min(1, frac == null ? 0 : frac)) * 100;
@@ -2592,7 +2658,7 @@ const RAIL = [
     { k: "roi", type: "range", label: "Sensor rows read (ROI)", min: 0.05, max: 1, step: 0.01, fmt: (v, b) => `${Math.round(v * 100)}% · ${fpsAtRoi(b, v)} fps`, show: (b) => hasCam(b) && camBand(b) !== "event" },
     { k: "expUs", type: "range", label: "Exposure", min: 10, max: 2000, step: 10, fmt: (v) => v + " µs", show: (b) => camBand(b) === "vis" },
     { k: "radar", type: "part", cat: "radar", label: "Radar", none: "No radar" },
-    { k: "radars", type: "range", label: "Radar units round the vest", min: 1, max: 4, step: 1, fmt: (v) => String(v), show: (b) => b.radar !== "none" },
+    { k: "radars", type: "range", label: "Radar units", min: 1, max: 4, step: 1, fmt: (v) => String(v), show: (b) => b.radar !== "none" },
   ] },
   { legend: "Processing and detection", items: [
     { k: "compute", type: "part", cat: "compute", label: "Compute" },
@@ -3547,7 +3613,7 @@ function renderLibGrid() {
       const uses = (USE_SLOTS[p.cat] ? USE_SLOTS[p.cat](p) : []).map(([slot, l]) => `<button class="btn small" type="button" data-act="use" data-slot="${slot}" data-id="${esc(p.id)}">${l}</button>`).join("");
       const src = (p.src || []).filter((s) => s && s.url).map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.url)}</a>`).join("");
       return `<article class="part ${inUse(p) ? "inuse" : ""}"><header><div><span class="tag">${esc(CAT.CATEGORIES[p.cat].one)}${p.shortlist ? " · retained ★" : ""}${p.custom ? " · " + p.custom : ""}${inUse(p) ? " · in build" : ""}</span><h3>${esc(p.name)}</h3><div class="vendor">${esc(p.vendor || "")}</div></div><div class="btnrow" style="justify-content:flex-end">${ratingChip(p)}${statusChip(p)}</div></header>
-        ${p.note ? `<p class="why">${esc(p.note)}</p>` : ""}${p.statusNote ? `<p class="role"><b>Verification:</b> ${esc(p.statusNote)}</p>` : ""}${p.desc ? `<p class="role">${esc(p.desc)}</p>` : ""}<dl>${rows}</dl>${src ? `<div class="src">${src}</div>` : ""}
+        ${p.note ? `<p class="why">${esc(p.note)}</p>` : ""}${p.statusNote ? `<p class="role"><b>Verification:</b> ${esc(p.statusNote)}</p>` : ""}${p.export ? `<p class="role" style="color:var(--bad)"><b>Restriction:</b> ${esc(p.export)}</p>` : ""}${p.desc ? `<p class="role">${esc(p.desc)}</p>` : ""}<dl>${rows}</dl>${src ? `<div class="src">${src}</div>` : ""}
         <div class="btnrow">${uses}<button class="btn small" type="button" data-act="edit" data-id="${esc(p.id)}">Edit</button><button class="btn small" type="button" data-act="dup" data-id="${esc(p.id)}">Duplicate</button>${p.custom === "edited" ? `<button class="btn small" type="button" data-act="restore" data-id="${esc(p.id)}">Restore default</button>` : ""}<button class="btn small danger" type="button" data-act="del" data-id="${esc(p.id)}">Delete</button></div></article>`;
     }).join("") || `<p class="note">No parts in this category. Add one with the button above.</p>`;
   }

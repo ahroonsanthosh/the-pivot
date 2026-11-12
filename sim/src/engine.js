@@ -296,7 +296,8 @@ function derive(b, lib, scen, cat) {
       }
       return R;
     };
-    radars = ringPlacement(RADAR_RING, b.radars, 0, occ);
+    const helmetRadar = radar.mount === "helmet";
+    radars = ringPlacement(helmetRadar ? POD_MOUNTS.helmet : RADAR_RING, b.radars * Math.max(1, Math.round(radar.apertures || 1)), 0, occ);
     radFov = { az: radar.fovAz, el: radar.fovEl };
     if (radar.mode === "chronograph") warn(`${radar.name} reports shot records after the event; it cannot cue a response in time.`, "radar");
     radSys = { part: radar, n: b.radars, lambda, dR, loopS, burstS, vAmb, frameS: 1 / radar.frameHz, latS: burstS / 2 + radar.procMs / 1000,
@@ -376,7 +377,10 @@ function derive(b, lib, scen, cat) {
   const add = (key, name, kg, color, pos, head, part) => { if (kg > 0) items.push({ key, name, mass: kg, color, y: pos[1], z: pos[2], head: !!head, part }); };
   if (cam && b.pods > 0) add("cams", `Camera pods ×${b.pods}`, b.pods * ((cam.mass + (lens ? lens.mass : 0)) / 1000 + POD_HOUSING), "--accent", [0, pm.y, 0], pm.head, cam);
   if (cam && b.pods > 0) add("harness", `${cam.iface === "mipi" ? "MIPI" : "USB"} harness`, b.pods * (cam.iface === "mipi" ? HARNESS_MIPI : HARNESS_USB), "--muted", [0, (pm.y + 1.25) / 2, -0.05], false);
-  if (radar && b.radars > 0) add("radar", `${radar.name} ×${b.radars}`, b.radars * (radar.mass / 1000 + RADAR_HOUSING), "--radar", [0, RADAR_RING.y, 0.1], false, radar);
+  if (radar && b.radars > 0) {
+    const onHelmet = radar.mount === "helmet";
+    add("radar", `${radar.name} ×${b.radars}`, b.radars * (radar.mass / 1000 + (onHelmet ? 0 : RADAR_HOUSING)), "--radar", [0, onHelmet ? POD_MOUNTS.helmet.y : RADAR_RING.y, 0.1], onHelmet, radar);
+  }
   if (comp) add("compute", `${comp.name} + enclosure`, (comp.mass + (comp.enclosure || 0)) / 1000, "--sensor", [0, 1.30, -0.20], false, comp);
   const battKg = b.battWh / chem.whkg;
   add("batt", `Battery ${b.battWh} Wh`, battKg, "--warn", [0, 1.10, -0.20], false);
@@ -398,7 +402,7 @@ function derive(b, lib, scen, cat) {
   const addP = (name, w) => { if (w > 0) pw.push({ name, w }); };
   if (cam && camSys) addP("Cameras", camSys.active * cam.power);
   if (comp) addP("Compute", comp.power);
-  if (radSys) addP("Radar", b.radars * radar.power);
+  if (radSys && !radar.ownBattery) addP("Radar", b.radars * radar.power);
   if (ctrl) addP("Controller", ctrl.power);
   if (drv) addP("Driver", drv.power);
   if (aimAct) addP(axes > 1 ? "Aim actuators (idle, ×2)" : "Aim actuator (idle)", (aimAct.idleW || 0) * axes);
@@ -417,6 +421,8 @@ function derive(b, lib, scen, cat) {
     ["Aim actuator", aimAct], ["Turret frame", frame], ["Gearing", gear], ["Deploy actuator", depAct], ["Pressure source", pSrc], ["Valve", pValve], ["Line", pLine], ["Protective element", shield]]
     .filter(([, p]) => p).map(([slot, p]) => ({ slot, part: p, rating: p.rating == null ? null : +p.rating, status: p.status || "unverified" }));
   slots.filter((s) => s.status === "eol").forEach((s) => warn(`${s.part.name} is end-of-life: it cannot be procured for a product.`, s.slot));
+  slots.filter((s) => s.part.export).forEach((s) => warn(`${s.part.name}: ${s.part.export}.`, s.slot));
+  slots.filter((s) => s.status === "claimed").forEach((s) => warn(`${s.part.name}: performance figures are vendor claims with no independent test data.`, s.slot));
   const rated = slots.filter((s) => s.rating != null);
   const readiness = { slots, min: rated.length ? Math.min(...rated.map((s) => s.rating)) : null, mean: rated.length ? rated.reduce((a, s) => a + s.rating, 0) / rated.length : null,
     unrated: slots.filter((s) => s.rating == null).map((s) => s.slot), weakest: rated.length ? rated.reduce((a, s) => (s.rating < a.rating ? s : a)) : null };

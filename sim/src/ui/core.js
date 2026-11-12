@@ -81,8 +81,8 @@ const persist = debounce(() => {
 
 /* ------------------------------------------------------------------ part presentation */
 const STATUS_NAME = Object.fromEntries(CAT.STATUS);
-const STATUS_SHORT = { verified: "verified", eol: "end-of-life", research: "research only", category: "category", unidentified: "model unknown", unverified: "unverified" };
-const STATUS_CLS = { verified: "ok", eol: "bad", research: "warn", category: "na", unidentified: "warn", unverified: "na" };
+const STATUS_SHORT = { verified: "verified", eol: "end-of-life", research: "research only", category: "category", unidentified: "model unknown", claimed: "vendor claims", unverified: "unverified" };
+const STATUS_CLS = { verified: "ok", eol: "bad", research: "warn", category: "na", unidentified: "warn", claimed: "warn", unverified: "na" };
 function statusChip(p) { const s = (p && p.status) || "unverified"; return `<span class="schip ${STATUS_CLS[s] || "na"}" title="${esc((p && p.statusNote) || STATUS_NAME[s] || "")}">${STATUS_SHORT[s] || s}</span>`; }
 const ratingClass = (r) => (r == null ? "na" : r >= 7 ? "ok" : r >= 4 ? "warn" : "bad");
 function ratingChip(p) {
@@ -116,7 +116,7 @@ function partSummary(p) {
 function partHint(p) {
   if (!p) return "";
   const est = (p.est || []).length;
-  return `${ratingChip(p)}${statusChip(p)}${p.shortlist ? '<span class="star" title="Retained as product candidate">★</span>' : ""}<span>${esc(partSummary(p))}</span>${est ? `<span class="estchip" title="Estimated fields: ${esc(p.est.join(", "))}">${est} est.</span>` : ""}`;
+  return `${ratingChip(p)}${statusChip(p)}${p.export ? `<span class="schip bad" title="${esc(p.export)}">restricted</span>` : ""}${p.shortlist ? '<span class="star" title="Retained as product candidate">★</span>' : ""}<span>${esc(partSummary(p))}</span>${est ? `<span class="estchip" title="Estimated fields: ${esc(p.est.join(", "))}">${est} est.</span>` : ""}`;
 }
 function gauge(label, value, unit, sub, frac, level) {
   const w = Math.max(0, Math.min(1, frac == null ? 0 : frac)) * 100;

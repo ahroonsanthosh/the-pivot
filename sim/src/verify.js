@@ -139,6 +139,50 @@ const CHECKS = [
     },
   },
   {
+    id: "spidr-tactical", title: "Syntonics SPiDR-Tactical: what its claims would buy", parts: ["syntonics-spidr-tactical"],
+    question: "If the vendor's claims hold, how much warning does the helmet radar give for each threat, is it enough for any response in the library, and how far can the claims slip before it stops mattering?",
+    method: "Radar-only build with the helmet unit, rounds from any bearing. Detection range is calibrated so a 5.56 mm round is seen at the claimed 10 m and scales with each threat's radar cross-section. Warnings are compared with the fastest response chain in the library and with human reaction time (250 ms). Then the claimed range and the unpublished latency are degraded.",
+    run(ctx) {
+      const id = "syntonics-spidr-tactical"; if (!has(ctx, id)) return na([id]);
+      const P = ctx.lib.byId[id], b = { ...BASE, radar: id, radars: 1, fusion: "radar" }, sc = { bearing: "uniform" }, need = ctx.scen.needMs;
+      const { sys } = sim(ctx, b, sc);
+      const chain = { ...BASE, controller: has(ctx, "teensy41") ? "teensy41" : "host-gpio", driver: has(ctx, "tmc2209") ? "tmc2209" : "direct", aim: has(ctx, "nema17-pancake") ? "nema17-pancake" : "none",
+        deploy: "pneumatic", pSource: has(ctx, "co2-12g") ? "co2-12g" : "ancile-compressor", pValve: "ancile-valve", pLine: "acrylic-hose", shield: has(ctx, "ancile-kevlar-100") ? "ancile-kevlar-100" : "none" };
+      const R = sim(ctx, chain, {}).sys.resp;
+      const deployOnly = R.drvMs + R.deployMs, slewDeploy = deployOnly + (R.aim ? R.aim.time(90) : 0);
+      const share = (r, lim) => r.warns.filter((w) => w >= lim).length / r.N;
+      const ids = ["9mm", "556", "762r", "762n", "127", "40mm", "fpv", "rpg"].filter((t) => thr(ctx, t)), res = {};
+      const rows = ids.map((t) => {
+        const th = thr(ctx, t), r = (res[t] = run(ctx, b, t, sc));
+        return [th.name, metres(E.radRange(sys.rad, th)), ms(r.medWarn), pct(share(r, need)), pct(share(r, deployOnly)), pct(share(r, slewDeploy)), pct(share(r, 250))];
+      });
+      const deg = (patch) => run(ctx, b, "556", sc, { lib: libWith(ctx, id, patch), N: 300 });
+      const has556 = !!res["556"];
+      const r05 = has556 ? deg({ rRef: P.rRef * 0.5 }) : null, r03 = has556 ? deg({ rRef: P.rRef * 0.3 }) : null;
+      const l5 = has556 ? deg({ procMs: 5 }) : null, l10 = has556 ? deg({ procMs: 10 }) : null, r2 = has556 ? deg({ rRef: P.rRef * 2 }) : null;
+      const smallIds = ids.filter((t) => thr(ctx, t).group === "small");
+      const smallSlew = smallIds.length ? Math.max(...smallIds.map((t) => share(res[t], slewDeploy))) : 0;
+      const smallDeploy = smallIds.length ? Math.max(...smallIds.map((t) => share(res[t], deployOnly))) : 0;
+      const air = E.coverageShare(sys.coverage, "rad", 20, 80);
+      const s556 = res["556"], th556 = thr(ctx, "556");
+      return {
+        verdict: "depends",
+        headline: `If the claims hold, it is the only wearable sensor in the library that cues rifle rounds from every direction: ${s556 ? `${pct(share(s556, need))} of 5.56 mm rounds get ${need} ms, with a median of ${ms(s556.medWarn)}` : "small-arms rounds are cued"}. That is a hostile-fire warning, not a trigger for protection: the fastest mechanism here needs ${ms(deployOnly)} just to deploy and ${ms(slewDeploy)} to slew 90° and deploy, which at most ${pct(Math.max(smallDeploy, smallSlew))} of small-arms rounds allow.${res.fpv ? ` It would cue protection against FPV drones (${pct(share(res.fpv, slewDeploy))} with time to slew and deploy)` : ""}${res["40mm"] ? ` and 40 mm grenades (${pct(share(res["40mm"], slewDeploy))})` : ""}. Every figure rests on vendor claims, and the part is ITAR-restricted.`,
+        table: { head: ["Threat", "Detection range (claim-scaled)", "Median warning", `≥ ${need} ms`, `≥ ${ms(deployOnly)} (deploy only)`, `≥ ${ms(slewDeploy)} (slew + deploy)`, "≥ 250 ms (human)"], rows },
+        findings: [
+          `100 g on the helmet with its own battery, and the only radar here that watches all round from one unit (${pct(sys.radGround)} of the ground band, ${pct(air)} of the air band).`,
+          th556 ? `Warning on rifle rounds is about the time a round takes to fly the last 10 m, roughly ${ms(10 / 0.85)} at 850 m/s, less processing. The claimed range to the shooter (up to 500 m) comes from back-tracking the round's path: useful for return fire and logging, not for protection.` : null,
+          "The last public contract built a Mark 1 prototype (2016–2018), described as the first of three efforts toward a mature system. No later test results are published.",
+        ].filter(Boolean),
+        sens: has556 ? [
+          `If detection range is half the claim, ${pct(share(r05, need))} of 5.56 mm rounds still get ${need} ms (median ${ms(r05.medWarn)}); at 30% of the claim, ${pct(share(r03, need))}.`,
+          `Latency is not published (2 ms assumed). At 5 ms, ${pct(share(l5, need))} of 5.56 mm rounds get ${need} ms; at 10 ms, ${pct(share(l10, need))}.`,
+          `Even at twice the claimed range, the median 5.56 mm warning is ${ms(r2.medWarn)} and ${pct(share(r2, deployOnly))} of rounds leave the ${ms(deployOnly)} a deploy-only mechanism needs.`,
+        ] : [],
+      };
+    },
+  },
+  {
     id: "optics", title: "Daheng MER2-160 and XIMEA xiQ: detection and warning", parts: ["daheng-mer2-160", "xiq-mq003cg", "xiq-mq003mg"],
     question: "With enough pods for 360°, how far out does each camera detect each threat, and how often is the warning long enough?",
     method: "Camera-only build on the shoulders, Orin Nano Super 15 W, current environment and activity. Pods = 360° ÷ lens field of view. Monte Carlo per threat; 50% range is where one pod's per-frame detection chance reaches one half.",

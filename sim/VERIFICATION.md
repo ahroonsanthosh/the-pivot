@@ -8,6 +8,7 @@ Each check takes a finding from the team's component fact-check and tests the pa
 |---|---|---|---|
 | [TI IWR6843AOP as a threat cue](#ti-radar) | TI IWR6843AOP | Verified against vendor or paper | **Not supported** |
 | [Ariel 2025 W-band radar run in real time](#ariel-radar) | Ariel 2025 W-band research radar | Research result only | **Depends on unknowns** |
+| [Syntonics SPiDR-Tactical: what its claims would buy](#spidr-tactical) | Syntonics SPiDR-Tactical | Vendor claims only, not independently tested | **Depends on unknowns** |
 | [Daheng MER2-160 and XIMEA xiQ: detection and warning](#optics) | Daheng MER2-160-227U3M, XIMEA xiQ MQ003CG-CM, XIMEA xiQ MQ003MG-CM (mono) | Verified against vendor or paper; Verified, end-of-life | **Not supported** |
 | [Jetson Orin NX 16GB against Orin Nano Super and others](#compute) | Jetson Orin Nano Super · 15 W, Jetson Orin Nano Super · 25 W MAXN, Jetson Orin NX 16GB · 25 W (module), Jetson Orin NX 16GB · MAXN Super (module), Raspberry Pi 5, AMD Kria K26 FPGA SOM (suggested) | Verified against vendor or paper | **Reference** |
 | [Teensy 4.1 against NXP S32K344 and Arduino Uno](#controllers) | Teensy 4.1, NXP FRDM-A-S32K344 (S32K3), Arduino Uno R3 | Verified against vendor or paper | **Supported** |
@@ -78,6 +79,42 @@ What the sim shows:
 What would change the verdict:
 
 - Halving or doubling the estimated reference range moves the in-beam timely-cue rate for 5.56 mm from 0% to 100% at 3 ms processing.
+
+## Syntonics SPiDR-Tactical: what its claims would buy
+<a id="spidr-tactical"></a>
+
+**Verdict: Depends on unknowns.** If the claims hold, it is the only wearable sensor in the library that cues rifle rounds from every direction: 100% of 5.56 mm rounds get 5 ms, with a median of 11 ms. That is a hostile-fire warning, not a trigger for protection: the fastest mechanism here needs 39 ms just to deploy and 150 ms to slew 90° and deploy, which at most 7% of small-arms rounds allow. It would cue protection against FPV drones (100% with time to slew and deploy) and 40 mm grenades (100%). Every figure rests on vendor claims, and the part is ITAR-restricted.
+
+Desk findings:
+
+- Syntonics SPiDR-Tactical: Vendor claims from the April 2024 announcement, no independent test data: detects 99.9+% of fast incoming projectiles passing within 10 m, reports range to shooters up to 500 m, nil false alarms, 100 g including batteries, 360° stare from under the helmet cover. USSOCOM SBIR Phase II built a Mark 1 prototype (2016–2018, US$2.09 M), described as the first of three efforts toward a mature system. Price not published.
+
+*Question.* If the vendor's claims hold, how much warning does the helmet radar give for each threat, is it enough for any response in the library, and how far can the claims slip before it stops mattering?
+
+*Method.* Radar-only build with the helmet unit, rounds from any bearing. Detection range is calibrated so a 5.56 mm round is seen at the claimed 10 m and scales with each threat's radar cross-section. Warnings are compared with the fastest response chain in the library and with human reaction time (250 ms). Then the claimed range and the unpublished latency are degraded.
+
+| Threat | Detection range (claim-scaled) | Median warning | ≥ 5 ms | ≥ 39 ms (deploy only) | ≥ 150 ms (slew + deploy) | ≥ 250 ms (human) |
+|---|---|---|---|---|---|---|
+| 9×19 mm pistol | 12 m | 32 ms | 100% | 6% | 0% | 0% |
+| 5.56×45 mm rifle | 10 m | 11 ms | 100% | 0% | 0% | 0% |
+| 7.62×39 mm rifle | 11 m | 17 ms | 100% | 0% | 0% | 0% |
+| 7.62×51 mm rifle | 11 m | 16 ms | 100% | 0% | 0% | 0% |
+| 12.7×99 mm HMG | 16 m | 26 ms | 100% | 7% | 0% | 0% |
+| 40 mm low-velocity grenade | 28 m | 538 ms | 100% | 100% | 100% | 100% |
+| FPV attack drone | 50 m | 1.82 s | 100% | 100% | 100% | 100% |
+| RPG-type rocket (reference) | 56 m | 265 ms | 100% | 100% | 100% | 84% |
+
+What the sim shows:
+
+- 100 g on the helmet with its own battery, and the only radar here that watches all round from one unit (100% of the ground band, 82% of the air band).
+- Warning on rifle rounds is about the time a round takes to fly the last 10 m, roughly 12 ms at 850 m/s, less processing. The claimed range to the shooter (up to 500 m) comes from back-tracking the round's path: useful for return fire and logging, not for protection.
+- The last public contract built a Mark 1 prototype (2016–2018), described as the first of three efforts toward a mature system. No later test results are published.
+
+What would change the verdict:
+
+- If detection range is half the claim, 21% of 5.56 mm rounds still get 5 ms (median 3.8 ms); at 30% of the claim, 0%.
+- Latency is not published (2 ms assumed). At 5 ms, 89% of 5.56 mm rounds get 5 ms; at 10 ms, 23%.
+- Even at twice the claimed range, the median 5.56 mm warning is 26 ms and 1% of rounds leave the 39 ms a deploy-only mechanism needs.
 
 ## Daheng MER2-160 and XIMEA xiQ: detection and warning
 <a id="optics"></a>

@@ -16,7 +16,7 @@ test("catalogue: ids unique, categories known, ratings in range", () => {
     assert.ok(!ids.has(p.id), `duplicate id ${p.id}`); ids.add(p.id);
     assert.ok(C.CATEGORIES[p.cat], `unknown category ${p.cat}`);
     if (p.rating != null) assert.ok(p.rating >= 0 && p.rating <= 10, `${p.id} rating`);
-    for (const f of C.CATEGORIES[p.cat].fields) if (f.type === "num" && !(f.hide && f.hide(p))) assert.equal(typeof p[f.k], "number", `${p.id}.${f.k}`);
+    for (const f of C.CATEGORIES[p.cat].fields) if (f.type === "num" && !f.optional && !(f.hide && f.hide(p))) assert.equal(typeof p[f.k], "number", `${p.id}.${f.k}`);
   }
   for (const b of C.EXAMPLE_BUILDS) for (const slot of ["camera", "lens", "compute", "controller"]) assert.ok(lib.byId[b[slot]], `${b.name} ${slot}`);
 });

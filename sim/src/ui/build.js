@@ -14,7 +14,7 @@ const RAIL = [
     { k: "roi", type: "range", label: "Sensor rows read (ROI)", min: 0.05, max: 1, step: 0.01, fmt: (v, b) => `${Math.round(v * 100)}% · ${fpsAtRoi(b, v)} fps`, show: (b) => hasCam(b) && camBand(b) !== "event" },
     { k: "expUs", type: "range", label: "Exposure", min: 10, max: 2000, step: 10, fmt: (v) => v + " µs", show: (b) => camBand(b) === "vis" },
     { k: "radar", type: "part", cat: "radar", label: "Radar", none: "No radar" },
-    { k: "radars", type: "range", label: "Radar units round the vest", min: 1, max: 4, step: 1, fmt: (v) => String(v), show: (b) => b.radar !== "none" },
+    { k: "radars", type: "range", label: "Radar units", min: 1, max: 4, step: 1, fmt: (v) => String(v), show: (b) => b.radar !== "none" },
   ] },
   { legend: "Processing and detection", items: [
     { k: "compute", type: "part", cat: "compute", label: "Compute" },

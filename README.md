@@ -44,6 +44,7 @@ node sim/tools/verify.js --out sim/VERIFICATION.md
 | Check | Sim verdict |
 |---|---|
 | TI IWR6843AOP as a threat cue | Not supported for small arms: about +90 dB short on 5.56 mm (+72 dB with a ballistic waveform); cues FPV drones in about half of front-quarter runs |
+| Syntonics SPiDR-Tactical (vendor claims) | Depends on unknowns: if the claims hold, the only wearable sensor here that cues rifle rounds from every direction (median about 11 ms on 5.56 mm). That is a hostile-fire warning, not a protection trigger, because the fastest mechanism needs 39 ms to deploy. It cues drones and 40 mm grenades with time to respond. ITAR-restricted |
 | Ariel 2025 W-band radar in real time | Depends on unknowns: useful in-beam below about 10 ms of processing, but one beam watches about 1% of the ground band |
 | Daheng MER2-160 and XIMEA xiQ | Not supported for rifle rounds. Pistol rounds are cued by the 500 fps xiQ, which is end-of-life; the Daheng needs ROI or more USB bandwidth to match it |
 | Orin NX 16GB against Orin Nano Super | Reference: USB bandwidth, not TOPS, limits Daheng pods to 2 at full rate on either |
