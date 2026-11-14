@@ -210,7 +210,7 @@ td.num { white-space: nowrap; }
         <div class="panel-head">
           <div>
             <h2 id="main-h">Smallest distinguishable angle vs distance</h2>
-            <p>Solid lines: realistic case (everything about the flash varies from shot to shot, best possible processing). Dashed: best case (only sensor noise). Lower is better.</p>
+            <p>Lines: the smallest angle above which every angle is told apart from dead-on. Solid is the realistic case (everything about the flash varies from shot to shot), dashed the best case (only sensor noise). Bars: narrower bands of angles that can also be told apart, inside the glow zone. Lower is better.</p>
           </div>
           <div class="tools">
             <div class="seg" role="group" aria-label="Plot units">
@@ -275,7 +275,7 @@ td.num { white-space: nowrap; }
         <div class="panel-head">
           <div>
             <h2 id="strip-h">The flash at 0°, 2°, 5°, 20° and 90°</h2>
-            <p id="strip-sub">Top row: the true flash. Below: each sensor at the scenario distance, exposure starting as the bullet leaves.</p>
+            <p id="strip-sub">Top row: the true flash. Below: each sensor at the scenario distance, exposure timed to catch the most light.</p>
           </div>
           <div class="tools">
             <label class="toggle"><input type="checkbox" id="strip-noise"> Noise</label>
@@ -438,7 +438,8 @@ td.num { white-space: nowrap; }
       duration: 2.0e-3,   // s, onset to 10 % of peak
       rise: 0.3e-3,       // s, onset to peak
       opacity: 0.5,       // optical depth straight across the cloud's width
-      onset: 0            // s, delay of cloud ignition after the bullet leaves
+      onset: 0,           // s, delay of cloud ignition after the bullet leaves
+      gap: 0              // m, gap between the muzzle and the rear of the cloud
     },
     glow: {
       on: true,
@@ -446,11 +447,13 @@ td.num { white-space: nowrap; }
       decay: 1.0e-3,      // s, exponential fade time
       model: 'edge',      // 'edge' = seen only while the far end of the bore is visible; 'column' = see-through gas column
       bore: 7.62e-3,      // m
-      barrel: 0.5         // m
+      barrel: 0.5,        // m
+      bulletBlock: true,  // the bullet hides the bore until it moves off the line of sight
+      bulletDiameter: 7.82e-3 // m (0.308 in groove diameter)
     },
     suppressor: { on: false, flashFactor: 10, glowMode: 'unchanged' }, // glowMode: unchanged | dimmed | hidden
     atmosphere: { beta: 0.3, sceneT: 300 },  // beta: extinction per km (Beer-Lambert); scene temperature K
-    study: { flashVar: 0.30, glowVar: 0.15, shapeVar: 0.15, timeVar: 0.15, detSNR: 5, pc: 0.90, latency: 0.05, ammo: 'M80', quality: 'normal', sweepRange: 300 }
+    study: { flashVar: 0.30, glowVar: 0.15, shapeVar: 0.15, timeVar: 0.15, rangeVar: 0, detSNR: 5, pc: 0.90, latency: 0.05, ammo: 'M80', quality: 'normal', sweepRange: 300 }
   };
 
   // Sensor presets. All optics are derived from pixel count, pitch, field of view and f-number,
@@ -498,7 +501,7 @@ td.num { white-space: nowrap; }
     const a = fl.length / 2, b = fl.width / 2;
     const s = Math.sin(th), c = Math.cos(th);
     const ap = Math.sqrt(a * a * s * s + b * b * c * c);
-    return { a, b, ap, lc: 2 * a * b / ap, uc: a * s, kappa: fl.opacity / fl.width };
+    return { a, b, ap, lc: 2 * a * b / ap, uc: (a + (fl.gap || 0)) * s, kappa: fl.opacity / fl.width };
   }
   // H(tau) = F(tau)/tau with F(tau) = 1/2 - (1 - e^-tau (1 + tau))/tau^2.  H(0) = 1/3.
   function Hfun(t) {
@@ -528,12 +531,18 @@ td.num { white-space: nowrap; }
     const l = g.lc * Math.sqrt(1 - r2);
     return plumeEmission(p) * l * phiFun(g.kappa * l);
   }
-  // Path length inside the cloud for light leaving the muzzle (rear tip) towards the sensor
+  // Path length inside the cloud for light leaving the muzzle towards the sensor.
+  // The muzzle sits 'gap' behind the cloud's rear tip on the barrel axis.
   function glowCloudPath(fl, th) {
     const a = fl.length / 2, b = fl.width / 2;
     const c = Math.cos(th), s = Math.sin(th);
-    if (c <= 0) return 0;
-    return 2 * c / a / (c * c / (a * a) + s * s / (b * b));
+    const x0 = -(a + (fl.gap || 0));
+    const A = c * c / (a * a) + s * s / (b * b), B = 2 * x0 * c / (a * a), Cq = x0 * x0 / (a * a) - 1;
+    const disc = B * B - 4 * A * Cq;
+    if (disc <= 0) return 0;
+    const sq = Math.sqrt(disc);
+    const t1 = (-B - sq) / (2 * A), t2 = (-B + sq) / (2 * A);
+    return Math.max(0, Math.max(0, t2) - Math.max(0, t1));
   }
 
   // ------------------------------------------------------------------ barrel glow
@@ -616,6 +625,142 @@ td.num { white-space: nowrap; }
   }
   function atmTransmission(p, R) { return Math.exp(-(p.atmosphere.beta || 0) * R / 1000); }
 
+  // ------------------------------------------------------------------ bullet blocking the view down the bore
+  // The bullet leaves along the barrel line. For an observer at angle th it hides part or all of the muzzle until it has
+  // moved off the observer's line of sight. The observer is taken to be in the vertical plane below the barrel line,
+  // where the targeted soldier is, so the bullet's gravity drop moves it back towards that line of sight.
+  // On the muzzle plane, as seen from the observer, the bullet is a disc of radius k*rb centred k*s from the muzzle
+  // centre, on the side away from the visible part of the bore: s = x tan(th) - drop, k = R / (R - x) (parallax).
+  const _trackCache = {};
+  function bulletTrack(ammoId) {
+    if (_trackCache[ammoId]) return _trackCache[ammoId];
+    const tr = trajectory(AMMO[ammoId] || AMMO.M80, 0, 90);
+    const out = { t: tr.map(r => r[0]), x: tr.map(r => r[1]), drop: tr.map(r => -r[2]) };
+    _trackCache[ammoId] = out;
+    return out;
+  }
+  function bulletAt(track, t) {
+    const T = track.t, n = T.length;
+    if (t <= 0) return { x: 0, drop: 0 };
+    if (t >= T[n - 1]) return { x: track.x[n - 1], drop: track.drop[n - 1] };
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= t) lo = m; else hi = m; }
+    const f = (t - T[lo]) / (T[hi] - T[lo]);
+    return { x: track.x[lo] + f * (track.x[hi] - track.x[lo]), drop: track.drop[lo] + f * (track.drop[hi] - track.drop[lo]) };
+  }
+  // integral of min(1, (w - x)/c) over [a, b]
+  function colInt(a, b, w, c) {
+    if (b <= a) return 0;
+    if (!(c > 0)) return b - a;
+    const xs = w - c;
+    let v = 0;
+    if (a < xs) v += Math.min(b, xs) - a;
+    const x0 = Math.max(a, xs);
+    if (b > x0) v += ((w - x0) * (w - x0) - (w - b) * (w - b)) / (2 * c);
+    return v;
+  }
+  // Weighted visible fraction of the muzzle opening (times cos th), minus a shadow disc centred at xs with radius rs.
+  // Coordinates on the muzzle plane: the bore's far end appears shifted by +c = barrel tan(th); the visible part sits at -x.
+  function boreVisible(gl, th, xs, rs) {
+    const r = gl.bore / 2, c = gl.barrel * Math.tan(Math.max(th, 0)), col = gl.model === 'column';
+    const N = 160;
+    let acc = 0;
+    for (let i = 0; i < N; i++) {
+      const f = -Math.PI / 2 + (i + 0.5) * Math.PI / N;
+      const y = r * Math.sin(f), w = r * Math.cos(f), dy = r * Math.cos(f) * Math.PI / N;
+      const lo = -w, hi = col ? w : Math.min(w, w - c);
+      if (hi <= lo) continue;
+      let v = col ? colInt(lo, hi, w, c) : hi - lo;
+      if (rs > Math.abs(y)) {
+        const ws = Math.sqrt(rs * rs - y * y);
+        const a = Math.max(lo, xs - ws), b = Math.min(hi, xs + ws);
+        if (b > a) v -= col ? colInt(a, b, w, c) : b - a;
+      }
+      acc += v * dy;
+    }
+    return Math.max(0, acc / (Math.PI * r * r)) * Math.cos(th);
+  }
+  // Fraction of the unblocked glow visible at time t (0 = fully hidden, 1 = bullet out of the way)
+  function blockedFraction(p, th, R, t, full) {
+    const gl = p.glow;
+    const fv = full == null ? boreVisible(gl, th, 0, 0) : full;
+    if (fv <= 0) return 1;
+    const bp = bulletAt(bulletTrack((p.study && p.study.ammo) || 'M80'), t);
+    const k = R / Math.max(1e-6, R - bp.x);
+    const rb = (gl.bulletDiameter || gl.bore) / 2;
+    return boreVisible(gl, th, k * (bp.x * Math.tan(th) - bp.drop), k * rb) / fv;
+  }
+  const _blockCache = new Map();
+  function blockTable(p, th, R, T) {
+    const gl = p.glow, ammo = (p.study && p.study.ammo) || 'M80';
+    const key = [th.toFixed(10), Math.round(R), gl.bore, gl.barrel, gl.model, gl.bulletDiameter, ammo, T.toPrecision(5)].join('|');
+    const hit = _blockCache.get(key);
+    if (hit) return hit;
+    const N = 600, dt = T / (N - 1);
+    const full = boreVisible(gl, th, 0, 0);
+    const b = new Float64Array(N);
+    for (let i = 0; i < N; i++) b[i] = full > 0 ? blockedFraction(p, th, R, i * dt, full) : 1;
+    const out = { T, N, dt, b, full };
+    if (_blockCache.size > 4000) _blockCache.clear();
+    _blockCache.set(key, out);
+    return out;
+  }
+  // Glow time profile with the bullet in the way: exp(-t/tau) * b(t), integrated numerically on the table grid.
+  function glowPulseBlocked(gl, scale, bt) {
+    const tau = Math.max(1e-6, gl.decay * (scale || 1));
+    const { N, dt, b, T } = bt;
+    const Gc = new Float64Array(N);
+    for (let i = 1; i < N; i++) Gc[i] = Gc[i - 1] + 0.5 * (Math.exp(-(i - 1) * dt / tau) * b[i - 1] + Math.exp(-i * dt / tau) * b[i]) * dt;
+    const bL = b[N - 1];
+    const bAt = t => { if (t <= 0) return b[0]; if (t >= T) return bL; const x = t / dt, i = Math.min(N - 2, Math.floor(x)), f = x - i; return b[i] + f * (b[i + 1] - b[i]); };
+    const g = t => (t < 0 ? 0 : Math.exp(-t / tau) * bAt(t));
+    const Gf = t => {
+      if (t <= 0) return 0;
+      if (t >= T) return Gc[N - 1] + bL * tau * (Math.exp(-T / tau) - Math.exp(-t / tau));
+      const x = t / dt, i = Math.min(N - 2, Math.floor(x)), f = x - i;
+      return Gc[i] + 0.5 * (Math.exp(-i * dt / tau) * b[i] + g(t)) * f * dt;
+    };
+    return { g, G: Gf, tEnd: tau * Math.log(100), energy: Gf(10), tau, blocked: true };
+  }
+  function blockHorizon(p) { return Math.max(glowPulse(p.glow, 1.5).tEnd, 3e-3); }
+  function glowPulseFor(p, th, R, scale, T) {
+    if (p.glow.on && p.glow.bulletBlock) return glowPulseBlocked(p.glow, scale, blockTable(p, th, R, T || blockHorizon(p)));
+    return glowPulse(p.glow, scale);
+  }
+  // First time the visible fraction reaches 'level' (scan then bisect). Infinity if not within tMax.
+  function clearTime(p, th, R, level, tMax) {
+    tMax = tMax || 0.1;
+    const full = boreVisible(p.glow, th, 0, 0);
+    if (full <= 0) return NaN;
+    const n = 800, dt = tMax / n;
+    let prev = 0;
+    for (let i = 1; i <= n; i++) {
+      const t = i * dt;
+      if (blockedFraction(p, th, R, t, full) >= level) {
+        let lo = prev, hi = t;
+        for (let it = 0; it < 30; it++) { const m = 0.5 * (lo + hi); if (blockedFraction(p, th, R, m, full) >= level) hi = m; else lo = m; }
+        return hi;
+      }
+      prev = t;
+    }
+    return Infinity;
+  }
+  // What the targeted soldier sees of the glow (the barrel points superelevation(R) above them).
+  function targetGlowView(p, R) {
+    const ammo = AMMO[(p.study && p.study.ammo) || 'M80'] || AMMO.M80;
+    const th = superelevation(ammo, R);
+    const full = boreVisible(p.glow, th, 0, 0);
+    const tau = p.glow.decay;
+    const out = { th, thDeg: th / DEG, full, tClear: NaN, tHalf: NaN, leftAtClear: NaN, energyFrac: full > 0 ? 1 : 0 };
+    if (full <= 0) return out;
+    out.tClear = clearTime(p, th, R, 0.99);
+    out.tHalf = clearTime(p, th, R, 0.5);
+    out.leftAtClear = isFinite(out.tClear) ? Math.exp(-out.tClear / tau) : 0;
+    const bt = blockTable(p, th, R, Math.max(12 * tau, 0.02));
+    out.energyFrac = glowPulseBlocked(p.glow, 1, bt).G(10) / tau;
+    return out;
+  }
+
   // ------------------------------------------------------------------ sensor radiometry
   // PSF: diffraction from a circular aperture, fitted as 84 % core Gaussian (sigma 0.42 lambda/D, matches the
   // Airy core) plus 16 % halo Gaussian (sigma 2.0 lambda/D, carries the ring energy). Encircled energy within
@@ -661,7 +806,7 @@ td.num { white-space: nowrap; }
   // Weights sum to 1; the absolute level comes from the analytic intensity.
   const _sampleCache = new Map();
   function plumeSamples(fl, th, nr, nps, noCache) {
-    const key = noCache ? null : [fl.length, fl.width, fl.opacity, th.toFixed(12), nr, nps].join('|');
+    const key = noCache ? null : [fl.length, fl.width, fl.opacity, fl.gap || 0, th.toFixed(12), nr, nps].join('|');
     if (key) { const hit = _sampleCache.get(key); if (hit) return hit; }
     const g = plumeGeom(fl, th);
     const n = nr * nps;
@@ -736,7 +881,7 @@ td.num { white-space: nowrap; }
   }
   function roiHalf(p, s, sd, R) {
     if (s.nx === 1) return 0;
-    const L = 1.5 * Math.max(p.flash.length, p.flash.width);   // room for shot-to-shot size variation
+    const L = 1.5 * (Math.max(p.flash.length, p.flash.width) + (p.flash.gap || 0));   // room for shot-to-shot size and range variation
     return Math.min(48, Math.ceil(L / (R * sd.ifov) + 0.5 + 4 * sd.sigPsfPx + 2 * sd.haloPx + 0.5));
   }
   // Fractions of cloud and glow energy landing in each ROI pixel.
@@ -778,12 +923,12 @@ td.num { white-space: nowrap; }
     const eK = electronsPerJoulePerSr(p, s, sd, R);
     const nomPP = plumePulse(p.flash, 1), nomGP = glowPulse(p.glow, 1);
     const multiFrame = Math.max(nomPP.tEnd, p.glow.on ? nomGP.tEnd : 0) / sd.Tf >= 3;
-    return { p, s, sd, R, h, W, npix, K, n: npix * K, eK, multiFrame, well: s.well, sat: s.well - sd.bgMean };
+    return { p, s, sd, R, h, W, npix, K, n: npix * K, eK, multiFrame, well: s.well, sat: s.well - sd.bgMean, blockT: blockHorizon(p) };
   }
   // Mean signal (electrons above background), dense over (frame, pixel), for one realisation.
   function buildMean(ctx, q, th, spatial, phase, ap, ag, out) {
     const { sd, K, npix, eK } = ctx;
-    const pp = plumePulse(q.flash, 1), gp = glowPulse(q.glow, 1);
+    const pp = plumePulse(q.flash, 1), gp = glowPulseFor(q, th, ctx.R, 1, ctx.blockT);
     const st = frameStarts(sd, phase, K);
     const Ip = plumeIntensity(q, th) * (ap == null ? 1 : ap);
     const Ig = glowIntensity(q, th) * (ag == null ? 1 : ag);
@@ -814,9 +959,29 @@ td.num { white-space: nowrap; }
   // Everything about the flash is known: timing (exposure starts as the bullet leaves), muzzle centred on a pixel,
   // nominal brightness, size and orientation. Ideal observer for two known signals in Gaussian noise:
   // P(correct) = Phi(d'/2), d'^2 = sum (mu1 - mu0)^2 / var, saturated pixels excluded.
+  // Best timing: the exposure phase that catches the most signal from a dead-on flash (clipped pixels count only up
+  // to full well). Matters for short exposures, which otherwise catch only a sliver of the flash.
+  function bestPhase(ctx) {
+    if (ctx._bestPhase != null) return ctx._bestPhase;
+    const { sd, p } = ctx;
+    const sp = renderSpatial(p, ctx.s, sd, ctx.R, 0, 0, 0, 0, ctx.h);
+    const tEvt = Math.max(plumePulse(p.flash, 1).tEnd, p.glow.on ? glowPulse(p.glow, 1).tEnd : 0);
+    const span = Math.min(sd.Tf, tEvt) + sd.tint;
+    let best = 0, bestV = -1;
+    const n = 64;
+    for (let i = 0; i < n; i++) {
+      const ts = -sd.tint + span * i / (n - 1);                 // exposure start relative to the bullet leaving
+      const phase = (((-ts) % sd.Tf) + sd.Tf) % sd.Tf;
+      const mu = buildMean(ctx, p, 0, sp, phase, 1, 1);
+      const v = matchedStat(ctx, mu.map(x => Math.min(x, ctx.sat)), mu);
+      if (v > bestV + 1e-12) { bestV = v; best = phase; }
+    }
+    ctx._bestPhase = best;
+    return best;
+  }
   function bestCaseMean(ctx, th) {
     const sp = renderSpatial(ctx.p, ctx.s, ctx.sd, ctx.R, th, 0, 0, 0, ctx.h);
-    return buildMean(ctx, ctx.p, th, sp, 0, 1, 1);
+    return buildMean(ctx, ctx.p, th, sp, bestPhase(ctx), 1, 1);
   }
   function bestCaseDprime(ctx, th, mu0) {
     const mu1 = bestCaseMean(ctx, th);
@@ -926,8 +1091,11 @@ td.num { white-space: nowrap; }
     const ap = Math.max(0.05, 1 + st.flashVar * rng.n());
     const ag = Math.max(0.05, 1 + st.glowVar * rng.n());
     const phi = 2 * Math.PI * rng.u(), dx = rng.u() - 0.5, dy = rng.u() - 0.5, phase = rng.u() * sd.Tf;
-    const spatial = renderSpatial(q, s, sd, R, thDeg * DEG, phi, dx, dy, h, true);
-    const mean = buildMean(ctx, q, thDeg * DEG, spatial, phase, ap, ag, buf.mean);
+    // unknown range: the true distance differs from the assumed one; brightness and apparent size follow it
+    const Rs = R * Math.min(1.5, Math.max(0.67, 1 + (st.rangeVar || 0) * rng.n()));
+    const rf = (R / Rs) * (R / Rs) * Math.exp(-(p.atmosphere.beta || 0) * (Rs - R) / 1000);
+    const spatial = renderSpatial(q, s, sd, Rs, thDeg * DEG, phi, dx, dy, h, true);
+    const mean = buildMean(ctx, q, thDeg * DEG, spatial, phase, ap * rf, ag * rf, buf.mean);
     const x = buf.x, v0 = sd.varBase, sat = ctx.sat;
     for (let i = 0; i < n; i++) {
       const mu = mean[i];
@@ -1022,68 +1190,124 @@ td.num { white-space: nowrap; }
   }
 
   // ------------------------------------------------------------------ threshold searches
+  // With the bullet hiding the glow near the axis, P(correct) need not rise steadily with angle: a sensor can tell
+  // 0.5 deg from dead-on (glow visible there, hidden dead-on) yet fail at 2 deg (no glow either way). So each result has
+  //   value:   smallest angle above which every angle is told apart (null with flag 'gt90' if not even 90 deg is)
+  //   windows: narrower bands [lo, hi] below that where angles are also told apart.
   const ANG_GRID = [0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30, 45, 60, 75, 90];
   function interpLogTheta(thLo, pLo, thHi, pHi, req) {
     const f = (pHi === pLo) ? 0.5 : Math.min(1, Math.max(0, (req - pLo) / (pHi - pLo)));
     return Math.exp(Math.log(thLo) + f * (Math.log(thHi) - Math.log(thLo)));
   }
-  // Best case: smallest angle above which the ideal observer is right at least pc of the time.
+  // Angles below this may see the glow; above it the only cues are the flash's shape and brightness, which change
+  // steadily with angle.
+  function glowZoneDeg(p) {
+    if (!p.glow.on || glowSuppressorScale(p) === 0 || !(p.glow.peak > 0)) return 0;
+    if (p.glow.model !== 'column') return glowCutoffDeg(p.glow);
+    for (const a of ANG_GRID) if (a >= 1 && glowIntensity(p, a * DEG) < 0.003 * plumeIntensity(p, a * DEG)) return a;
+    return 90;
+  }
+  function insideGrid(gz, model) {
+    if (gz <= 0) return [];
+    if (model !== 'column') return [0.057, 0.115, 0.23, 0.34, 0.52, 0.69, 0.86].map(f => +(f * gz).toPrecision(3));
+    const n = 9, lo = 0.05, hi = 0.9 * gz, out = [];
+    for (let i = 0; i < n; i++) out.push(+(lo * Math.pow(hi / lo, i / (n - 1))).toPrecision(3));
+    return out;
+  }
+  // Best case: ideal observer on a fine angle grid; edges refined by bisection.
   function bestCaseThreshold(p, s, R) {
     const ctx = makeContext(p, s, R);
     const ref = bestCaseReference(ctx);
-    const req = p.study.pc;
-    const dreq = 2 * normInv(req);
-    const res = { detected: ref.peakSNR >= p.study.detSNR, peakSNR: ref.peakSNR, saturated: ref.saturated, value: null, flag: null };
+    const req = p.study.pc, dreq = 2 * normInv(req);
+    const res = { detected: ref.peakSNR >= p.study.detSNR, peakSNR: ref.peakSNR, saturated: ref.saturated, value: null, flag: null, windows: [] };
     if (!res.detected) { res.flag = 'undetected'; return res; }
+    const ok = a => bestCaseDprime(ctx, a * DEG, ref.mu0) >= dreq;
     const grid = [];
-    for (let i = 0; i <= 44; i++) grid.push(0.01 * Math.pow(9000, i / 44)); // 0.01 .. 90 deg
-    const dp = grid.map(g => bestCaseDprime(ctx, g * DEG, ref.mu0));
+    for (let i = 0; i <= 60; i++) grid.push(0.01 * Math.pow(9000, i / 60));   // 0.01 .. 90 deg
+    const pass = grid.map(ok);
+    const edge = (aPass, aFail) => {          // boundary between a passing and a failing angle (either order)
+      let lo = aPass, hi = aFail;
+      for (let it = 0; it < 10; it++) { const m = Math.sqrt(lo * hi); if (ok(m)) lo = m; else hi = m; }
+      return Math.sqrt(lo * hi);
+    };
     let k = grid.length;
-    while (k > 0 && dp[k - 1] >= dreq) k--;
-    if (k === grid.length) { res.flag = 'gt90'; return res; }
-    if (k === 0) { res.value = grid[0]; res.flag = 'lt'; return res; }
-    let lo = grid[k - 1], hi = grid[k];
-    for (let it = 0; it < 12; it++) {
-      const mid = Math.sqrt(lo * hi);
-      if (bestCaseDprime(ctx, mid * DEG, ref.mu0) >= dreq) hi = mid; else lo = mid;
+    while (k > 0 && pass[k - 1]) k--;
+    if (k === grid.length) res.flag = 'gt90';
+    else if (k === 0) { res.value = grid[0]; res.flag = 'lt'; }
+    else res.value = edge(grid[k], grid[k - 1]);
+    for (let i = 0; i < k; i++) {
+      if (!pass[i]) continue;
+      let j = i;
+      while (j + 1 < k && pass[j + 1]) j++;
+      res.windows.push([i === 0 ? grid[0] : edge(grid[i], grid[i - 1]), edge(grid[j], grid[j + 1]), i === 0]);
+      i = j;
     }
-    res.value = Math.sqrt(lo * hi);
     return res;
   }
-  // Realistic: P(correct) rises with angle; bisection over ANG_GRID. Generator returning a result object.
+  // Realistic: fixed grid inside the glow zone (where P(correct) can go up and down), bisection above it.
   function* realisticThreshold(p, s, R, sIdx, rIdx) {
     const ctx = makeContext(p, s, R);
     const kind = featureKind(ctx);
     const N = qualityN(p.study.quality);
     const buf = makeBuf(ctx);
-    const res = { value: null, flag: null, pd: null, evals: [], kind };
+    const res = { value: null, flag: null, pd: null, evals: [], kind, windows: [] };
     const h0 = yield* collectShots(ctx, 0, 0, N, sIdx, rIdx, buf, kind);
     res.pd = h0.F.length / h0.attempts;
     if (h0.F.length < 40) { res.flag = 'undetected'; return res; }
     const req = p.study.pc;
     const cache = new Map();
-    function* pcAt(i) {
-      if (cache.has(i)) return cache.get(i);
-      const h1 = yield* collectShots(ctx, ANG_GRID[i], 1, N, sIdx, rIdx, buf, kind);
+    function* pcAt(a) {
+      if (cache.has(a)) return cache.get(a);
+      const h1 = yield* collectShots(ctx, a, 1, N, sIdx, rIdx, buf, kind);
       const n = Math.min(h0.F.length, h1.F.length);
       const pc = n < 40 ? null : qdaPc(h0.F.slice(0, n), h1.F.slice(0, n));
-      cache.set(i, pc);
-      res.evals.push([ANG_GRID[i], pc, n]);
+      cache.set(a, pc);
+      res.evals.push([a, pc, n]);
       return pc;
     }
-    const last = ANG_GRID.length - 1;
-    const pTop = yield* pcAt(last);
+    const gz = glowZoneDeg(p);
+    const inside = insideGrid(gz, p.glow.model);
+    const topIn = inside.length ? inside[inside.length - 1] : 0;
+    const above = ANG_GRID.filter(a => a > Math.max(gz, topIn) * 1.0001);
+    const last = above.length - 1;
+    const pTop = yield* pcAt(above[last]);
     if (pTop === null) { res.flag = 'undetected'; return res; }
-    if (pTop < req) { res.flag = 'gt90'; return res; }
-    let lo = -1, hi = last;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      const pm = yield* pcAt(mid);
-      if (pm !== null && pm >= req) hi = mid; else lo = mid;
+    let allIdx = null;
+    if (pTop >= req) {
+      let lo = -1, hi = last;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        const pm = yield* pcAt(above[mid]);
+        if (pm !== null && pm >= req) hi = mid; else lo = mid;
+      }
+      allIdx = hi;
+      if (lo >= 0) res.value = interpLogTheta(above[lo], cache.get(above[lo]) == null ? 0.5 : cache.get(above[lo]), above[hi], cache.get(above[hi]), req);
+    } else res.flag = 'gt90';
+    const pin = [];
+    for (const a of inside) pin.push(yield* pcAt(a));
+    const passIn = pin.map(v => v !== null && v >= req);
+    const pv = v => (v == null ? 0.5 : v);
+    let tailStart = inside.length;
+    if (allIdx === 0) {
+      let k = inside.length;
+      while (k > 0 && passIn[k - 1]) k--;
+      tailStart = k;
+      if (k === 0 && inside.length) { res.value = inside[0]; res.flag = 'lt'; }
+      else if (k < inside.length) res.value = interpLogTheta(inside[k - 1], pv(pin[k - 1]), inside[k], pin[k], req);
+      else if (inside.length) res.value = interpLogTheta(inside[k - 1], pv(pin[k - 1]), above[0], cache.get(above[0]), req);
+      else { res.value = above[0]; res.flag = 'lt'; }
     }
-    if (lo < 0) { res.value = ANG_GRID[0]; res.flag = 'lt'; return res; }
-    const pl = cache.get(lo);
-    res.value = interpLogTheta(ANG_GRID[lo], pl == null ? 0.5 : pl, ANG_GRID[hi], cache.get(hi), req);
+    for (let i = 0; i < tailStart; i++) {
+      if (!passIn[i]) continue;
+      let j = i;
+      while (j + 1 < tailStart && passIn[j + 1]) j++;
+      const lo = i === 0 ? inside[0] : interpLogTheta(inside[i - 1], pv(pin[i - 1]), inside[i], pin[i], req);
+      let hiA, hiP;
+      if (j + 1 < inside.length) { hiA = inside[j + 1]; hiP = pin[j + 1]; }
+      else { hiA = above[0]; hiP = yield* pcAt(above[0]); }
+      res.windows.push([lo, interpLogTheta(inside[j], pin[j], hiA, pv(hiP), req), i === 0]);
+      i = j;
+    }
     return res;
   }
 
@@ -1176,7 +1400,7 @@ td.num { white-space: nowrap; }
     const th = thDeg * DEG;
     const Tat = atmTransmission(p, R);
     const Ip = plumeIntensity(p, th) * Tat / (R * R), Ig = glowIntensity(p, th) * Tat / (R * R);
-    const pp = plumePulse(p.flash, 1), gp = glowPulse(p.glow, 1);
+    const pp = plumePulse(p.flash, 1), gp = glowPulseFor(p, th, R, 1);
     const t = [], ep = [], eg = [];
     for (let i = 0; i < n; i++) {
       const ti = t0 + (t1 - t0) * i / (n - 1);
@@ -1192,7 +1416,7 @@ td.num { white-space: nowrap; }
     const ctx = makeContext(p, s, R);
     const { sd, npix, K, h } = ctx;
     const spatial = renderSpatial(p, s, sd, R, th, opts.orient || 0, opts.dx || 0, opts.dy || 0, h);
-    const phase = opts.phase == null ? 0 : opts.phase;
+    const phase = opts.phase == null ? bestPhase(ctx) : opts.phase;
     const mean = buildMean(ctx, p, th, spatial, phase, 1, 1);
     const sat = ctx.sat;
     const rng = opts.noise ? makeRng(opts.seed || 1) : null;
@@ -1244,8 +1468,9 @@ td.num { white-space: nowrap; }
     glowCloudTransmission, glowIntensity, glowEquivalentTemperature, flashScale, glowSuppressorScale,
     plumePulse, glowPulse, atmTransmission, sensorDerived, electronsPerJoulePerSr,
     plumeSamples, quadrature, renderSpatial, applyHalo, roiHalf, makeContext, buildMean, matchedStat,
-    bestCaseMean, bestCaseReference, bestCaseDprime, bestCaseThreshold,
-    qualityN, variantParams, featureKind, computeFeatures, drawRealistic, fitGauss, gaussLogPdf, qdaPc, collectShots,
+    bestPhase, bestCaseMean, bestCaseReference, bestCaseDprime, bestCaseThreshold,
+    qualityN, variantParams, featureKind, computeFeatures, drawRealistic, fitGauss, gaussLogPdf, qdaPc, collectShots, glowZoneDeg, insideGrid,
+    bulletTrack, bulletAt, boreVisible, blockedFraction, blockTable, glowPulseBlocked, glowPulseFor, clearTime, targetGlowView,
     makeBuf, realisticThreshold,
     cdG7, trajectory, superelevation, ballisticsTable, interpAtX,
     irradianceSeries, simulateCapture, radianceMap
@@ -1325,6 +1550,10 @@ td.num { white-space: nowrap; }
     if (r.flag === 'lt') return '< ' + fmtAngle(r.value);
     return fmtAngle(r.value);
   }
+  function winText(r, short) {
+    if (!r || !r.windows || !r.windows.length) return '';
+    return (short ? '' : 'also ') + r.windows.map(w => (w[2] ? '< ' : '') + fmtAngle(w[0]).replace('°', '') + '–' + fmtAngle(w[1])).join(', ');
+  }
   function nearestRangeIndex(R) {
     let bi = 0;
     RANGES.forEach((r, i) => { if (Math.abs(r - R) < Math.abs(RANGES[bi] - R)) bi = i; });
@@ -1390,6 +1619,7 @@ td.num { white-space: nowrap; }
       if (lx + w > W - padR && lx > padL) { lx = padL; ly += 18; }
       g.save();
       if (it.kind === 'block') { g.fillStyle = it.color; g.fillRect(lx, ly - 8, 12, 10); }
+      else if (it.kind === 'bar') { g.globalAlpha = 0.6; g.strokeStyle = it.color; g.lineWidth = 5; g.lineCap = 'round'; g.beginPath(); g.moveTo(lx + 10, ly - 10); g.lineTo(lx + 10, ly + 1); g.stroke(); g.globalAlpha = 1; }
       else {
         g.strokeStyle = it.color; g.lineWidth = it.width || 2; g.setLineDash(it.dash || []);
         g.beginPath(); g.moveTo(lx, ly - 3); g.lineTo(lx + 20, ly - 3); g.stroke();
@@ -1443,6 +1673,11 @@ td.num { white-space: nowrap; }
       g.fillRect(Math.min(a, b), Math.min(ya, yb), Math.max(1.5, Math.abs(b - a)), Math.abs(yb - ya));
       g.globalAlpha = 1;
       if (r.edge) { g.strokeStyle = r.color; g.lineWidth = 1.5; g.beginPath(); g.moveTo(Math.min(a, b), ya); g.lineTo(Math.max(a, b) + 0.5, ya); g.stroke(); }
+    }
+    for (const br of (spec.bars || [])) {
+      g.save(); g.globalAlpha = br.alpha == null ? 0.6 : br.alpha; g.strokeStyle = br.color; g.lineWidth = br.width || 4; g.lineCap = 'round';
+      const X = sx(br.x) + (br.dx || 0);
+      g.beginPath(); g.moveTo(X, sy(br.lo)); g.lineTo(X, sy(br.hi)); g.stroke(); g.restore();
     }
     for (const rf of (spec.refs || [])) {
       g.strokeStyle = rf.color || T.muted; g.lineWidth = rf.width || 1.25; g.setLineDash(rf.dash || [4, 4]);
@@ -1592,11 +1827,11 @@ td.num { white-space: nowrap; }
   function settingsLines() {
     const p = state.p, f = p.flash, gl = p.glow, st = p.study;
     return [
-      `Flash cloud: ${f.length} m x ${f.width} m, side-on peak ${f.peakSide} W/sr (3-5 um), duration ${(f.duration * 1e3).toFixed(2)} ms, rise ${(f.rise * 1e3).toFixed(2)} ms, opacity ${f.opacity}, ignition delay ${(f.onset * 1e3).toFixed(2)} ms`,
-      `Barrel glow: ${gl.on ? 'on' : 'off'}, on-axis peak ${gl.peak} W/sr before the cloud, fade ${(gl.decay * 1e3).toFixed(2)} ms, model ${gl.model}, bore ${(gl.bore * 1e3).toFixed(2)} mm, barrel ${gl.barrel} m`,
+      `Flash cloud: ${f.length} m x ${f.width} m, gap ${f.gap} m, side-on peak ${f.peakSide} W/sr (3-5 um), duration ${(f.duration * 1e3).toFixed(2)} ms, rise ${(f.rise * 1e3).toFixed(2)} ms, opacity ${f.opacity}, ignition delay ${(f.onset * 1e3).toFixed(2)} ms`,
+      `Barrel glow: ${gl.on ? 'on' : 'off'}, on-axis peak ${gl.peak} W/sr before the cloud, fade ${(gl.decay * 1e3).toFixed(2)} ms, model ${gl.model}, bore ${(gl.bore * 1e3).toFixed(2)} mm, barrel ${gl.barrel} m, bullet blocking ${gl.bulletBlock ? 'on (' + (gl.bulletDiameter * 1e3).toFixed(2) + ' mm, ' + st.ammo + ')' : 'off'}`,
       `Suppressor: ${p.suppressor.on ? 'on, flash /' + p.suppressor.flashFactor + ', glow ' + p.suppressor.glowMode : 'off'}`,
       `Air: extinction ${p.atmosphere.beta} /km, scene ${p.atmosphere.sceneT} K`,
-      `Realistic case: flash brightness +/-${Math.round(st.flashVar * 100)}%, glow +/-${Math.round(st.glowVar * 100)}%, size +/-${Math.round(st.shapeVar * 100)}%, timing +/-${Math.round(st.timeVar * 100)}% (1 sigma); detection ${st.detSNR} sigma; required ${Math.round(st.pc * 100)}% correct; ${C.qualityN(st.quality)} detected shots per class`,
+      `Realistic case: flash brightness +/-${Math.round(st.flashVar * 100)}%, glow +/-${Math.round(st.glowVar * 100)}%, size +/-${Math.round(st.shapeVar * 100)}%, timing +/-${Math.round(st.timeVar * 100)}%, range +/-${Math.round(st.rangeVar * 100)}% (1 sigma); detection ${st.detSNR} sigma; required ${Math.round(st.pc * 100)}% correct; ${C.qualityN(st.quality)} detected shots per class`,
       'Sensors: ' + state.sensors.map(s => `${s.short} ${s.nx}x${s.ny} ${s.fov}deg F/${s.fnum} ${s.frameRate} Hz exposure ${(s.tint * 1e3).toFixed(3)} ms`).join('; ')
     ];
   }
@@ -1682,12 +1917,13 @@ td.num { white-space: nowrap; }
     ], () => `${v.range} m · ${fmtAngle(v.angle)}`));
     // Flash
     rail.appendChild(group('Flash cloud', true, [
-      numCtl({ id: 'fpeak', label: 'Side-on peak brightness', unit: 'W/sr', min: 5, max: 100, step: 1, get: () => p.flash.peakSide, set: x => { p.flash.peakSide = x; }, kind: KIND.MODEL, hint: '3–5 µm. Kastek et al. report about 57 W/sr front and 68 W/sr side for a rifle.' }),
+      numCtl({ id: 'fpeak', label: 'Side-on peak brightness', unit: 'W/sr', min: 5, max: 100, step: 1, get: () => p.flash.peakSide, set: x => { p.flash.peakSide = x; }, kind: KIND.MODEL, hint: '3–5 µm. Kastek et al. are reported (secondhand, unverified) at about 57 W/sr front and 68 W/sr side for a rifle.' }),
       numCtl({ id: 'flen', label: 'Length along the barrel', unit: 'm', min: 0.2, max: 1.5, step: 0.01, get: () => p.flash.length, set: x => { p.flash.length = x; }, kind: KIND.MODEL }),
       numCtl({ id: 'fwid', label: 'Width', unit: 'm', min: 0.1, max: 0.8, step: 0.01, get: () => p.flash.width, set: x => { p.flash.width = x; }, kind: KIND.MODEL }),
       numCtl({ id: 'fdur', label: 'Duration (to 10 % of peak)', unit: 'ms', min: 0.5, max: 6, step: 0.1, get: () => p.flash.duration * 1e3, set: x => { p.flash.duration = x / 1e3; }, kind: KIND.MODEL }),
       numCtl({ id: 'frise', label: 'Rise time', unit: 'ms', min: 0.05, max: 1.5, step: 0.01, get: () => p.flash.rise * 1e3, set: x => { p.flash.rise = x / 1e3; }, kind: KIND.MODEL }),
       numCtl({ id: 'fopa', label: 'Opacity across the width', unit: 'τ', min: 0, max: 3, step: 0.05, get: () => p.flash.opacity, set: x => { p.flash.opacity = x; }, kind: KIND.MODEL, hint: 'Optical depth straight across the cloud. 0 is see-through, 3 is nearly opaque. It also dims the barrel glow shining through the cloud.' }),
+      numCtl({ id: 'fgap', label: 'Gap between muzzle and cloud', unit: 'm', min: 0, max: 0.5, step: 0.01, get: () => p.flash.gap, set: x => { p.flash.gap = x; }, kind: KIND.MODEL, hint: 'The main fireball can sit some way downrange. Inside the glow zone the glow still crosses the whole cloud, so this mainly changes the image.' }),
       numCtl({ id: 'fdel', label: 'Ignition delay after the bullet leaves', unit: 'ms', min: 0, max: 1, step: 0.05, get: () => p.flash.onset * 1e3, set: x => { p.flash.onset = x / 1e3; }, kind: KIND.MODEL, hint: 'A delay gives fast sensors a moment when only the barrel glow is visible. Not assumed by default.' }),
       derivedBox('flash')
     ], () => `${p.flash.peakSide} W/sr`));
@@ -1695,6 +1931,8 @@ td.num { white-space: nowrap; }
     rail.appendChild(group('Barrel glow', true, [
       toggleCtl({ id: 'gon', label: 'Hot gas in the barrel is visible', get: () => p.glow.on, set: x => { p.glow.on = x; }, kind: KIND.MODEL }),
       numCtl({ id: 'gpeak', label: 'On-axis peak brightness', unit: 'W/sr', min: 0.1, max: 100, log: true, step: 'any', fmt: x => +x.toPrecision(3), get: () => p.glow.peak, set: x => { p.glow.peak = x; }, kind: KIND.MODEL, hint: 'Before passing through the cloud. 1–4 W/sr matches gas at 1500–2500 K filling a 7.62 mm hole.' }),
+      toggleCtl({ id: 'gblock', label: 'Bullet blocks the view down the bore', get: () => p.glow.bulletBlock, set: x => { p.glow.bulletBlock = x; }, kind: KIND.MODEL, hint: 'The bullet leaves along the barrel line and hides the bore until it has moved off your line of sight. On the line itself it stays in the way for about 40 ms.' }),
+      numCtl({ id: 'gbd', label: 'Bullet diameter', unit: 'mm', min: 7.0, max: 8.5, step: 0.01, get: () => p.glow.bulletDiameter * 1e3, set: x => { p.glow.bulletDiameter = x / 1e3; }, kind: KIND.MODEL }),
       numCtl({ id: 'gdec', label: 'Fade time', unit: 'ms', min: 0.2, max: 5, step: 0.05, get: () => p.glow.decay * 1e3, set: x => { p.glow.decay = x / 1e3; }, kind: KIND.MODEL }),
       selectCtl({ id: 'gmodel', label: 'How it fades off-axis', options: [['edge', 'Hard edge: only while the far end of the bore is visible'], ['column', 'Soft tail: see-through gas column']], get: () => p.glow.model, set: x => { p.glow.model = x; }, kind: KIND.MODEL }),
       numCtl({ id: 'gbore', label: 'Bore diameter', unit: 'mm', min: 5, max: 13, step: 0.01, get: () => p.glow.bore * 1e3, set: x => { p.glow.bore = x / 1e3; }, kind: KIND.MODEL }),
@@ -1723,9 +1961,10 @@ td.num { white-space: nowrap; }
       numCtl({ id: 'gvar', label: 'Glow brightness variation', unit: '%', min: 0, max: 60, step: 1, get: () => Math.round(st.glowVar * 100), set: x => { st.glowVar = x / 100; }, kind: KIND.STUDY }),
       numCtl({ id: 'svar', label: 'Flash size variation', unit: '%', min: 0, max: 40, step: 1, get: () => Math.round(st.shapeVar * 100), set: x => { st.shapeVar = x / 100; }, kind: KIND.STUDY }),
       numCtl({ id: 'tvar', label: 'Flash and glow timing variation', unit: '%', min: 0, max: 40, step: 1, get: () => Math.round(st.timeVar * 100), set: x => { st.timeVar = x / 100; }, kind: KIND.STUDY }),
+      numCtl({ id: 'rvar', label: 'Range uncertainty', unit: '%', min: 0, max: 50, step: 1, get: () => Math.round(st.rangeVar * 100), set: x => { st.rangeVar = x / 100; }, kind: KIND.STUDY, hint: 'How far the true distance can differ from the assumed one (1 σ). Changes brightness and apparent size. 0 means the sensor knows the range.' }),
       selectCtl({ id: 'qual', label: 'Simulated shots per angle', options: [['fast', '150 (fast)'], ['normal', '300'], ['fine', '600 (slow)']], get: () => st.quality, set: x => { st.quality = x; }, kind: KIND.STUDY }),
       numCtl({ id: 'swr', label: 'Distance for the glow-brightness plot', unit: 'm', min: 50, max: 800, step: 50, get: () => st.sweepRange, set: x => { st.sweepRange = Math.round(x / 50) * 50; }, kind: KIND.STUDY }),
-      selectCtl({ id: 'ammo', label: 'Round', options: [['M80', 'M80 ball, 147 gr'], ['M118LR', 'M118LR sniper, 175 gr']], get: () => st.ammo, set: x => { st.ammo = x; }, kind: KIND.BALLISTIC }),
+      selectCtl({ id: 'ammo', label: 'Round', options: [['M80', 'M80 ball, 147 gr'], ['M118LR', 'M118LR sniper, 175 gr']], get: () => st.ammo, set: x => { st.ammo = x; }, kind: KIND.MODEL, hint: 'Sets flight time, barrel elevation and how fast the bullet clears the view down the bore.' }),
       numCtl({ id: 'lat', label: 'Processing delay', unit: 'ms', min: 0, max: 300, step: 5, get: () => Math.round(st.latency * 1e3), set: x => { st.latency = x / 1e3; }, kind: KIND.BALLISTIC })
     ], () => `${Math.round(st.pc * 100)} % correct`));
     rail.appendChild(el('div', { class: 'rail-actions' }, [
@@ -1771,7 +2010,7 @@ td.num { white-space: nowrap; }
     if (derivedBoxes.flash) {
       const fr = C.plumeIntensity(p, 0) / C.plumeIntensity(p, 90 * D);
       kv(derivedBoxes.flash, [
-        ['Front / side brightness', fr.toFixed(2) + ' (measured 0.83)'],
+        ['Front / side brightness', fr.toFixed(2) + ' (reported 0.83, unverified)'],
         ['Dead-on peak', sig(C.plumeIntensity(p, 0), 3) + ' W/sr'],
         ['Glow let through dead-on', Math.round(100 * C.glowCloudTransmission(p, 0)) + ' %']
       ]);
@@ -1780,7 +2019,8 @@ td.num { white-space: nowrap; }
       kv(derivedBoxes.glow, [
         ['Visible within', C.glowCutoffDeg(p.glow).toFixed(2) + '° of the barrel'],
         ['Same as a black body at', Math.round(C.glowEquivalentTemperature(p.glow)) + ' K'],
-        ['Reaches a dead-on sensor', sig(C.glowIntensity(p, 0), 3) + ' W/sr']
+        ['Reaches a dead-on sensor', p.glow.bulletBlock ? 'none (bullet in the way)' : sig(C.glowIntensity(p, 0), 3) + ' W/sr'],
+        ['Glow path through the cloud', (C.glowCloudPath(p.flash, 0) * 100).toFixed(0) + ' cm dead-on']
       ]);
     }
     if (derivedBoxes.sensor) {
@@ -1810,7 +2050,7 @@ td.num { white-space: nowrap; }
       renderProgress();
       clearTimeout(studyTimer); studyTimer = setTimeout(startStudy, 650);
     }
-    if (kind === KIND.MODEL || kind === KIND.BALLISTIC) { balCache = null; }
+    if (kind === KIND.MODEL || kind === KIND.BALLISTIC) { balCache = null; tvCache = {}; }
     clearTimeout(liveTimer);
     liveTimer = setTimeout(() => { renderLive(); renderStrip(); renderBallistics(); renderAnswer(); renderMain(); renderSweep(); }, 40);
   }
@@ -1940,13 +2180,15 @@ td.num { white-space: nowrap; }
       const pd = r && r.pd != null ? Math.round(r.pd * 100) + ' %' : '…';
       const miss = r && r.value != null ? (r.flag === 'lt' ? '< ' : '') + fmtLen(R * Math.tan(r.value * D)) : (r ? '—' : '…');
       const realCell = el('td', { class: 'num' });
-      if (r && r.flag === 'gt90') realCell.appendChild(el('span', { class: 'pill bad', text: 'cannot tell' }));
+      if (r && r.flag === 'gt90') realCell.appendChild(el('span', { class: r.windows && r.windows.length ? 'pill warn' : 'pill bad', text: r.windows && r.windows.length ? 'only ' + winText(r, true) : 'cannot tell' }));
       else if (r && r.flag === 'undetected') realCell.appendChild(el('span', { class: 'pill warn', text: 'not detected' }));
-      else realCell.textContent = resText(r);
+      else { realCell.textContent = resText(r); if (winText(r)) realCell.appendChild(el('div', { class: 'muted', style: 'font-size:11px', text: winText(r) })); }
+      const bestCell = el('td', { class: 'num', text: b ? (b.flag === 'undetected' ? 'not detected' : resText(b)) + (b.saturated ? ' · sat.' : '') : '…' });
+      if (b && winText(b)) bestCell.appendChild(el('div', { class: 'muted', style: 'font-size:11px', text: winText(b) }));
       tb.appendChild(el('tr', {}, [
         el('td', {}, [el('span', { class: 'swatch', style: `background:var(--s${si + 1});margin-right:6px` }), s.short]),
         el('td', { class: 'num', text: pd }),
-        el('td', { class: 'num', text: b ? (b.flag === 'undetected' ? 'not detected' : resText(b)) + (b.saturated ? ' · sat.' : '') : '…' }),
+        bestCell,
         realCell,
         el('td', { class: 'num', text: miss }),
         el('td', { class: 'num', text: fmtWarn(warningTime(s, ammo, R)) })
@@ -1960,6 +2202,7 @@ td.num { white-space: nowrap; }
       lead.innerHTML = `Working out the realistic case for ${R} m. The shooter’s barrel points <strong>${fmtAngle(se)}</strong> above the target at this distance (${C.AMMO[ammo].name}), and the barrel glow is only visible within <strong>${fmtAngle(cut)}</strong> of the barrel line.`;
     } else {
       const ok = state.sensors.map((s, si) => ({ s, r: res.real[si][ri] })).filter(o => o.r.value != null);
+      const win = state.sensors.map((s, si) => ({ s, r: res.real[si][ri] })).filter(o => o.r.windows && o.r.windows.length);
       const bestReal = ok.sort((a, b) => a.r.value - b.r.value)[0];
       const bestB = state.sensors.map((s, si) => ({ s, r: res.best[si][ri] })).filter(o => o.r.value != null).sort((a, b) => a.r.value - b.r.value)[0];
       let txt = '';
@@ -1969,11 +2212,12 @@ td.num { white-space: nowrap; }
         txt = `At ${R} m the best sensor in the realistic case is the <strong>${bestReal.s.short.toLowerCase()}</strong>, which tells dead-on apart from <strong>${resText(bestReal.r)}</strong> off the barrel line: a shot that passes <strong>${fmtLen(md)}</strong> from you.`;
         txt += bestReal.r.value > cut ? ' That is outside the barrel-glow zone, so it relies on the flash shape and brightness.' : ' That is inside the barrel-glow zone, so the glow is doing the work.';
       }
+      if (win.length) txt += ` Inside the glow zone the ${win[0].s.short.toLowerCase()} can also tell ${winText(win[0].r, true)} apart from dead-on, because the glow shows there but the bullet hides it on the barrel line.`;
       if (bestB) txt += ` With only sensor noise (best case) the ${bestB.s.short.toLowerCase()} could reach ${resText(bestB.r)}, so the limit is how much each flash differs from the last, not sensor noise.`;
       txt += ` The shooter’s barrel points ${fmtAngle(se)} above the target here (${C.AMMO[ammo].name}).`;
       lead.innerHTML = txt;
     }
-    $('answer-note').textContent = `“Catches the flash” is how often a shot is detected at all (matched filter, ${p.study.detSNR} σ), with random exposure timing. The smallest angle is where the sensor calls “dead-on” vs “off-axis” correctly ${Math.round(p.study.pc * 100)} % of the time on detected shots. “sat.” means pixels saturate in the best case. Warning time: ${C.AMMO[ammo].name} flight time minus one frame and ${Math.round(p.study.latency * 1e3)} ms processing.`;
+    $('answer-note').textContent = `“Catches the flash” is how often a shot is detected at all (matched filter, ${p.study.detSNR} σ), with random exposure timing. The smallest angle is the one above which the sensor calls “dead-on” vs “off-axis” correctly ${Math.round(p.study.pc * 100)} % of the time on detected shots; “also” lists narrower bands below it that pass too.${p.glow.bulletBlock ? ' The bullet blocks the view down the bore.' : ' Bullet blocking is off.'}${p.study.rangeVar > 0 ? ` Range uncertain by ±${Math.round(p.study.rangeVar * 100)} %.` : ' Range assumed known.'} “sat.” means pixels saturate in the best case. Warning time: ${C.AMMO[ammo].name} flight time minus one frame and ${Math.round(p.study.latency * 1e3)} ms processing.`;
   }
 
   // ------------------------------------------------------------------ main and sweep charts
@@ -1994,34 +2238,44 @@ td.num { white-space: nowrap; }
       })
     };
   }
+  function barsFrom(list, xs, si, isBest, toY) {
+    const out = [];
+    xs.forEach((x, i) => {
+      const r = list[i];
+      if (!r || !r.windows) return;
+      r.windows.forEach(w => out.push({ x, dx: (si - 1.5) * 8 + (isBest ? -2.5 : 2.5), lo: toY(w[0], x), hi: toY(w[1], x), color: TH.s[si], width: isBest ? 2.5 : 5, alpha: isBest ? 0.85 : 0.55 }));
+    });
+    return out;
+  }
   function legendItems(extra) {
     const L = state.sensors.map((s, i) => ({ kind: 'block', color: TH.s[i], label: s.short }));
-    L.push({ kind: 'line', color: TH.muted, width: 2.4, label: 'realistic', marker: 'dot' }, { kind: 'line', color: TH.muted, width: 1.5, dash: [5, 4], label: 'best case', marker: 'ring' });
+    L.push({ kind: 'line', color: TH.muted, width: 2.4, label: 'realistic', marker: 'dot' }, { kind: 'line', color: TH.muted, width: 1.5, dash: [5, 4], label: 'best case', marker: 'ring' }, { kind: 'bar', color: TH.muted, label: 'narrower band also told apart' });
     return L.concat(extra || []);
   }
   function mainSpec() {
     const res = state.results, p = state.p, ammo = p.study.ammo;
     const miss = state.mode === 'miss';
     const toY = (deg, R) => (miss ? R * Math.tan(deg * D) : deg);
-    const series = [];
+    const series = [], bars = [];
     if (res) state.sensors.forEach((s, si) => {
       series.push(seriesFrom(res.best[si] || [], RANGES, si, true, toY));
       series.push(seriesFrom(res.real[si] || [], RANGES, si, false, toY));
+      bars.push(...barsFrom(res.best[si] || [], RANGES, si, true, toY), ...barsFrom(res.real[si] || [], RANGES, si, false, toY));
     });
     const cut = C.glowCutoffDeg(p.glow);
     const tab = ballistics()[ammo];
     const refs = [
-      { kind: 'curve', pts: tab.filter(r => r.R >= 50).map(r => [r.R, miss ? r.R * Math.tan(r.superDeg * D) : r.superDeg]), color: TH.ink, dash: [1.5, 3], width: 1.6, label: 'the targeted soldier sits here (barrel aims high)', labelAt: tab.findIndex(r => r.R >= 425) - tab.findIndex(r => r.R >= 50), labelBelow: true },
+      { kind: 'curve', pts: tab.filter(r => r.R >= 50).map(r => [r.R, miss ? r.R * Math.tan(r.superDeg * D) : r.superDeg]), color: TH.ink, dash: [1.5, 3], width: 1.6, label: 'the targeted soldier sits here (barrel aims high)', labelAt: tab.findIndex(r => r.R >= 200) - tab.findIndex(r => r.R >= 50), labelBelow: true },
       miss ? { kind: 'curve', pts: RANGES.map(R => [R, R * Math.tan(cut * D)]), color: TH.accent, dash: [6, 3], label: `glow zone edge (${fmtAngle(cut)})` }
         : { kind: 'h', y: cut, color: TH.accent, dash: [6, 3], label: `glow visible inside ${fmtAngle(cut)}`, align: 'left' }
     ];
     return {
       x: { type: 'lin', min: 40, max: 810, ticks: [50, 100, 200, 300, 400, 500, 600, 700, 800], fmt: t => t + ' m', label: 'Distance to the shooter' },
       y: miss ? MISS_AXIS : ANG_AXIS,
-      bands: BANDS, series, refs, hoverXs: RANGES,
+      bands: BANDS, series, bars, refs, hoverXs: RANGES,
       legend: legendItems([{ kind: 'line', color: TH.ink, dash: [1.5, 3], width: 1.6, label: `target position (${C.AMMO[ammo].name})` }, { kind: 'line', color: TH.accent, dash: [6, 3], width: 1.25, label: 'glow zone edge' }]),
       title: 'Smallest angle off the barrel line told apart from dead-on',
-      subtitle: `${Math.round(p.study.pc * 100)} % correct calls. Solid: realistic case; dashed: best case (sensor noise only).`,
+      subtitle: `${Math.round(p.study.pc * 100)} % correct calls. Lines: every angle above is told apart (solid realistic, dashed best case). Bars: narrower bands also told apart.${p.glow.bulletBlock ? ' Bullet blocks the bore view.' : ''}`,
       footnote: settingsLines().slice(0, 5),
       tooltip: x => tipRows(RANGES.indexOf(x), x + ' m', res && res.best, res && res.real, toY, miss)
     };
@@ -2030,8 +2284,9 @@ td.num { white-space: nowrap; }
     if (i < 0) return null;
     const f = (r, x) => {
       if (!r) return '…';
-      if (r.value == null) return r.flag === 'gt90' ? '> 90°' : 'not seen';
-      return miss ? fmtLen(toY(r.value, x)) : resText(r);
+      const w = r.windows && r.windows.length ? ' (' + winText(r, true) + ')' : '';
+      if (r.value == null) return (r.flag === 'gt90' ? '> 90°' : 'not seen') + w;
+      return (miss ? fmtLen(toY(r.value, x)) : resText(r)) + w;
     };
     const x = parseFloat(head);
     let h = `<div style="margin-bottom:3px;color:var(--muted)">${head}</div>`;
@@ -2045,10 +2300,11 @@ td.num { white-space: nowrap; }
   function renderMain() { if (chartMain) chartMain.set(mainSpec()); }
   function sweepSpec() {
     const res = state.results, p = state.p;
-    const series = [];
+    const series = [], bars = [];
     if (res) state.sensors.forEach((s, si) => {
       series.push(seriesFrom(res.sweepBest[si] || [], SWEEP, si, true, v => v));
       series.push(seriesFrom(res.sweepReal[si] || [], SWEEP, si, false, v => v));
+      bars.push(...barsFrom(res.sweepBest[si] || [], SWEEP, si, true, v => v), ...barsFrom(res.sweepReal[si] || [], SWEEP, si, false, v => v));
     });
     const R = res ? res.sweepRange : p.study.sweepRange;
     const cut = C.glowCutoffDeg(p.glow);
@@ -2059,10 +2315,10 @@ td.num { white-space: nowrap; }
     ];
     return {
       x: { type: 'log', min: 0.08, max: 125, ticks: [0.1, 0.3, 1, 3, 10, 30, 100], fmt: t => String(t), label: 'Barrel glow, on-axis peak before the cloud (W/sr)' },
-      y: ANG_AXIS, bands: BANDS, series, refs, hoverXs: SWEEP,
+      y: ANG_AXIS, bands: BANDS, series, bars, refs, hoverXs: SWEEP,
       legend: legendItems([{ kind: 'line', color: TH.accent, dash: [6, 3], width: 1.25, label: 'glow zone edge' }]),
       title: `Smallest angle told apart from dead-on vs barrel-glow brightness, ${R} m`,
-      subtitle: `${Math.round(p.study.pc * 100)} % correct calls. Solid: realistic case; dashed: best case (sensor noise only).`,
+      subtitle: `${Math.round(p.study.pc * 100)} % correct calls. Lines: every angle above is told apart (solid realistic, dashed best case). Bars: narrower bands also told apart.`,
       footnote: settingsLines().slice(0, 5),
       tooltip: x => tipRows(SWEEP.indexOf(x), x + ' W/sr', res && res.sweepBest, res && res.sweepReal, v => v, false)
     };
@@ -2123,8 +2379,9 @@ td.num { white-space: nowrap; }
     g.drawImage(off, 0, 0, W, H);
     // muzzle and glow marker
     const mx = (0 - TRUE_WIN.x0) / TRUE_WIN.spanX * W, my = H / 2;
-    const gI = C.glowIntensity(p, thDeg * D);
-    if (gI > 0) {
+    const og = observerGlow(p, thDeg * D, state.view.range);
+    const gI = og.frac * p.glow.peak * C.glowCloudTransmission(p, 0);
+    if (gI > 0.005) {
       const rr = Math.max(2, Math.min(W * 0.06, 3 + 9 * Math.sqrt(gI / 2)));
       const grad = g.createRadialGradient(mx, my, 0, mx, my, rr * 2);
       grad.addColorStop(0, 'rgba(255,255,255,0.95)'); grad.addColorStop(0.35, 'rgba(255,240,200,0.6)'); grad.addColorStop(1, 'rgba(255,240,200,0)');
@@ -2151,7 +2408,7 @@ td.num { white-space: nowrap; }
     const p = state.p, v = state.view, s = state.sensors[v.sensor];
     const sd = C.sensorDerived(s, p.atmosphere);
     const rng = C.makeRng(v.seed * 7919 + 13);
-    const opts = { noise: v.noise, seed: v.seed, phase: v.random ? rng.u() * sd.Tf : 0, dx: v.random ? rng.u() - 0.5 : 0, dy: v.random ? rng.u() - 0.5 : 0, orient: 0 };
+    const opts = { noise: v.noise, seed: v.seed, phase: v.random ? rng.u() * sd.Tf : null, dx: v.random ? rng.u() - 0.5 : 0, dy: v.random ? rng.u() - 0.5 : 0, orient: 0 };
     const cap = C.simulateCapture(p, s, v.range, v.angle, opts);
     lastCapture = { cap, s, v: Object.assign({}, v), opts };
     $('live-sub').textContent = `${s.name} at ${v.range} m, ${fmtAngle(v.angle)} off the barrel line (the barrel line passes ${fmtLen(v.range * Math.tan(v.angle * D))} from the sensor).`;
@@ -2220,6 +2477,18 @@ td.num { white-space: nowrap; }
   }
   function niceStep(x) { const e = Math.pow(10, Math.floor(Math.log10(x))); const f = x / e; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * e; }
   function niceTicks(a, b, n) { const st = niceStep((b - a) / n); const out = []; for (let t = Math.ceil(a / st) * st; t <= b + 1e-9; t += st) out.push(+t.toPrecision(6)); return out; }
+  // glow seen by an observer at angle th: when the bullet clears the bore view, and the glow light received
+  // relative to an unblocked dead-on view
+  function observerGlow(p, th, R) {
+    if (!p.glow.on || C.glowIntensity(p, th) <= 0 && C.boreFraction(p.glow, th) <= 0) return { clear: '—', energy: p.glow.on ? 'none (outside the glow zone)' : '—', frac: 0 };
+    const unblocked = C.boreFraction(p.glow, th) * C.glowSuppressorScale(p) * C.glowCloudTransmission(p, th) / Math.max(1e-12, C.glowCloudTransmission(p, 0));
+    if (!p.glow.bulletBlock) return { clear: 'blocking off', energy: Math.round(100 * unblocked) + ' % of a dead-on view', frac: unblocked };
+    const tof = balAt(p.study.ammo, R).tof;
+    const ct = C.clearTime(p, th, R, 0.99, tof);
+    const tau = p.glow.decay;
+    const e = C.glowPulseBlocked(p.glow, 1, C.blockTable(p, th, R, Math.max(12 * tau, 0.02))).G(10) / tau;
+    return { clear: isFinite(ct) ? (ct * 1e3).toFixed(2) + ' ms' : 'not before the bullet arrives', energy: (100 * e * unblocked).toFixed(e * unblocked < 0.1 ? 1 : 0) + ' % of an unblocked dead-on view', frac: e * unblocked };
+  }
   function renderLiveReadouts() {
     if (!lastCapture) return;
     const p = state.p, v = state.view, s = state.sensors[v.sensor];
@@ -2234,13 +2503,16 @@ td.num { white-space: nowrap; }
     const ref = C.bestCaseReference(cap.ctx);
     const ri = nearestRangeIndex(v.range);
     const rr = state.results && state.results.real[v.sensor] ? state.results.real[v.sensor][ri] : null;
+    const obsView = observerGlow(p, th, v.range);
     const items = [
       ['Barrel line passes', fmtLen(v.range * Math.tan(th)) + ' from you'],
       ['Air lets through', Math.round(100 * C.atmTransmission(p, v.range)) + ' %'],
       ['Flash toward you', sig(Ip, 3) + ' W/sr'],
       ['Glow toward you', Ig > 0 ? sig(Ig, 3) + ' W/sr' : 'none'],
       ['Glow share of the light', (100 * Ig / (Ip + Ig)).toFixed(1) + ' %'],
-      ['Bore far end visible', p.glow.on ? Math.round(100 * C.boreFraction(p.glow, th)) + ' %' : '—'],
+      ['Bore far end visible', p.glow.on ? Math.round(100 * C.boreFraction(p.glow, th)) + ' % once the bullet is clear' : '—'],
+      ['Bullet clears your view', obsView.clear],
+      ['Glow light you get', obsView.energy],
       ['Flash size on sensor', s.nx > 1 ? `${sig(Lpx, 2)} × ${sig(Wpx, 2)} px` : 'one element'],
       ['Peak signal / noise', sig(ref.peakSNR, 3) + ' (best timing)'],
       ['Saturated pixels', isFinite(s.well) ? (nsat ? nsat + ' in this shot' : 'none') : 'cannot saturate'],
@@ -2269,8 +2541,8 @@ td.num { white-space: nowrap; }
     STRIP_ANGLES.forEach(a => {
       const cv = el('canvas', { width: 160, height: 160, style: 'image-rendering:auto' });
       const g = C.plumeGeom(p.flash, a * D);
-      const gl = C.glowIntensity(p, a * D);
-      const cell = el('div', { class: 'cell' }, [cv, el('div', { class: 'c', text: `${(g.ap / g.b).toFixed(2)}:1 · glow ${gl > 0 ? sig(gl, 2) : '0'}` })]);
+      const og = observerGlow(p, a * D, v.range);
+      const cell = el('div', { class: 'cell' }, [cv, el('div', { class: 'c', text: `${(g.ap / g.b).toFixed(2)}:1 · glow ${Math.round(100 * og.frac)}%` })]);
       box.appendChild(cell);
       paintTrueSquare(cv, a, vmaxT);
       row0.push(cv);
@@ -2278,7 +2550,7 @@ td.num { white-space: nowrap; }
     stripCells.push({ label: 'True flash', canvases: row0, captions: STRIP_ANGLES.map(a => { const g = C.plumeGeom(p.flash, a * D); return `${(g.ap / g.b).toFixed(2)}:1`; }) });
     // sensor rows
     state.sensors.forEach((s, si) => {
-      const caps = STRIP_ANGLES.map(a => C.simulateCapture(p, s, v.range, a, { noise: v.stripNoise, seed: 3 + si, phase: 0 }));
+      const caps = STRIP_ANGLES.map(a => C.simulateCapture(p, s, v.range, a, { noise: v.stripNoise, seed: 3 + si }));
       const frames = caps.map(cp => { let kb = 0; cp.frames.forEach((f, k) => { if (f.meanSum > cp.frames[kb].meanSum) kb = k; }); return cp.frames[kb]; });
       let vmax = 0, anySat = false;
       frames.forEach((f, i) => { f.img.forEach(x => { if (x > vmax) vmax = x; }); if (f.nsat) anySat = true; vmax = Math.max(vmax, 3 * caps[i].sigma); });
@@ -2296,11 +2568,11 @@ td.num { white-space: nowrap; }
       });
       stripCells.push({ label: s.short, canvases: row, captions: capsTxt });
     });
-    $('strip-sub').textContent = `Top row: the true flash (same brightness scale, glow drawn at the muzzle). Below: each sensor at ${v.range} m, exposure starting as the bullet leaves, brightest frame, same scale within a row. Numbers under the sensor images are the signal relative to 0°.`;
+    $('strip-sub').textContent = `Top row: the true flash (same brightness scale, glow drawn at the muzzle). Below: each sensor at ${v.range} m, exposure timed to catch the most light, brightest frame, same scale within a row. Numbers under the sensor images are the signal relative to 0°.`;
     const lg = $('strip-legend'); lg.innerHTML = '';
     lg.appendChild(el('span', {}, [el('span', { class: 'ramp', style: `background:${rampCss()}` }), ' dark to bright']));
     lg.appendChild(el('span', {}, [el('span', { class: 'swatch', style: `background:var(--sat)` }), ' saturated pixel']));
-    lg.appendChild(el('span', { text: 'Top-row captions: outline length:width and glow toward the sensor (W/sr).' }));
+    lg.appendChild(el('span', { text: 'Top-row captions: outline length:width, and glow light received as a share of an unblocked dead-on view.' }));
   }
   function paintTrueSquare(cv, a, vmax) {
     // square crop of the true window centred on the flash's long axis
@@ -2311,6 +2583,16 @@ td.num { white-space: nowrap; }
   }
 
   // ------------------------------------------------------------------ ballistics view
+  let tvCache = {};
+  function targetCache(R) {
+    const p = state.p, key = [R, p.study.ammo, p.glow.on, p.glow.bulletBlock, p.glow.decay, p.glow.model, p.glow.bore, p.glow.barrel, p.glow.bulletDiameter, p.flash.opacity, p.flash.length, p.flash.width, p.flash.gap, p.suppressor.on, p.suppressor.glowMode].join('|');
+    if (tvCache[key]) return tvCache[key];
+    const se = balAt(p.study.ammo, R).superDeg * D;
+    const o = observerGlow(p, se, R);
+    const out = { clear: o.clear, energy: o.energy.replace(' of an unblocked dead-on view', '').replace(' of a dead-on view', ''), frac: o.frac };
+    tvCache[key] = out;
+    return out;
+  }
   function renderBallistics() {
     const tab = ballistics();
     const p = state.p, ammo = p.study.ammo;
@@ -2351,8 +2633,8 @@ td.num { white-space: nowrap; }
       title: 'How far the barrel points above the target', subtitle: 'Launch angle needed to hit a target at the same height', footnote: [],
       tooltip: x => {
         const a = balAt('M80', x), b = balAt('M118LR', x);
-        const fa = Math.round(100 * C.boreFraction(p.glow, a.superDeg * D)), fb = Math.round(100 * C.boreFraction(p.glow, b.superDeg * D));
-        return `<div style="color:var(--muted)">${x} m</div><div class="row"><span>M80 ball</span><span>${a.superDeg.toFixed(3)}° · target sees ${fa}% of glow</span></div><div class="row"><span>M118LR</span><span>${b.superDeg.toFixed(3)}° · target sees ${fb}% of glow</span></div>`;
+        const tv = targetCache(x);
+        return `<div style="color:var(--muted)">${x} m</div><div class="row"><span>M80 ball</span><span>${a.superDeg.toFixed(3)}°</span></div><div class="row"><span>M118LR</span><span>${b.superDeg.toFixed(3)}°</span></div><div class="row"><span>target (${C.AMMO[state.p.study.ammo].name}) gets</span><span>${tv.energy} of the glow</span></div>`;
       }
     });
     // table
@@ -2362,7 +2644,7 @@ td.num { white-space: nowrap; }
       el('th', { text: 'Distance' }), el('th', { class: 'num', text: 'M80 flight' }), el('th', { class: 'num', text: 'M118LR flight' }),
       el('th', { class: 'num', text: `Speed (${C.AMMO[ammo].name})` }),
       ...state.sensors.map(s => el('th', { class: 'num', text: `Warning: ${s.short}` })),
-      el('th', { class: 'num', text: 'Barrel above target' }), el('th', { class: 'num', text: 'Glow the target sees' })
+      el('th', { class: 'num', text: 'Barrel above target' }), el('th', { class: 'num', text: 'Bullet clears target’s view' }), el('th', { class: 'num', text: 'Glow light the target gets' })
     ])]));
     const tb = el('tbody');
     rows.forEach(R => {
@@ -2373,7 +2655,7 @@ td.num { white-space: nowrap; }
         el('td', { class: 'num', text: `${Math.round(c.v)} m/s (M ${c.mach.toFixed(2)})` }),
         ...state.sensors.map(s => el('td', { class: 'num', text: fmtWarn(warningTime(s, ammo, R)) })),
         el('td', { class: 'num', text: `${c.superDeg.toFixed(3)}° (${c.superMrad.toFixed(1)} mrad)` }),
-        el('td', { class: 'num', text: p.glow.on ? Math.round(100 * C.boreFraction(p.glow, c.superDeg * D)) + ' %' : '—' })
+        ...(() => { const tv = targetCache(R); return [el('td', { class: 'num', text: tv.clear }), el('td', { class: 'num', text: tv.energy })]; })()
       ]));
     });
     t.appendChild(tb);
@@ -2386,14 +2668,16 @@ td.num { white-space: nowrap; }
       <h2 id="notes-h">How the model works</h2>
       <h3>Flash cloud</h3>
       <ul>
-        <li>A uniform glowing ellipsoid whose rear tip sits at the muzzle and whose long axis lies on the barrel line. Each line of sight adds up emission and self-absorption through the gas (radiance = source × (1 − e<sup>−κℓ</sup>)), so a see-through cloud looks equally bright from every side and an opaque one looks brighter side-on.</li>
-        <li>The default opacity (optical depth 0.5 across the width) gives a front/side ratio of 0.85. Kastek et al. (Military University of Technology, Warsaw) measured 56.82 and 68.32 W/sr in 3–5 µm, a ratio of 0.83, with a 0.71 m flash. Their test conditions are not published in what I could find, so treat 60 W/sr as a guess.</li>
+        <li>A uniform glowing ellipsoid on the barrel line, its rear tip at the muzzle or a set gap downrange. Each line of sight adds up emission and self-absorption through the gas (radiance = source × (1 − e<sup>−κℓ</sup>)), so a see-through cloud looks equally bright from every side and an opaque one looks brighter side-on.</li>
+        <li>The default opacity (optical depth 0.5 across the width) gives a front/side ratio of 0.85. It was chosen to match 56.82 and 68.32 W/sr (ratio 0.83, 0.71 m flash) attributed to Kastek et al. (Military University of Technology, Warsaw). Those figures, and what “front” meant, could not be confirmed from the papers, so treat both 60 W/sr and the opacity as unverified guesses.</li>
+        <li>The gap setting moves the cloud downrange. Inside the glow zone the glow still crosses the whole cloud (0.70 m at 0°, 0.699 m at 0.8° with a 0.2 m gap), so the gap changes the image, not the glow's dimming.</li>
         <li>Time profile: smooth rise to peak, then exponential fall to 10 % at the set duration. The opacity is held for the whole event, which can only dim the glow more than reality would.</li>
       </ul>
       <h3>Barrel glow</h3>
       <ul>
         <li>Hard-edge model: the glow is the part of the bore's far end visible through the muzzle. It shrinks as two overlapping circles and vanishes at atan(bore / barrel) = 0.87°. The soft-tail option treats the bore as see-through gas, so off-axis lines of sight still count the gas they cross.</li>
         <li>The glow starts as the bullet leaves and fades exponentially. It shines through the cloud dead-on (a 0.7 m path), so at the default opacity only 37 % gets out.</li>
+        <li><b>Bullet blocking</b> (switchable, on by default): the bullet, 7.82 mm across, leaves along the barrel line and hides the bore from an observer until it has moved off their line of sight. Its shadow on the muzzle is a disc offset by (distance flown × tan angle − gravity drop) × R/(R − distance), using the selected round's trajectory. The observer is taken to be below the barrel line, where the targeted soldier is. On the barrel line itself the bullet stays in the way for about 40 ms, so a dead-on observer gets no glow. At 0.3° the view clears after about 1 ms. The glow therefore marks “near the line but not on it”, and the targeted soldier gets 8–36 % of an unblocked dead-on view (see the ballistics table).</li>
         <li>2 W/sr is a black body at about 1900 K filling the 7.62 mm hole. Gas is not a black body in 3–5 µm, so this is an upper estimate for that temperature.</li>
       </ul>
       <h3>Sensors</h3>
@@ -2404,9 +2688,9 @@ td.num { white-space: nowrap; }
       </ul>
       <h3>How “told apart” is decided</h3>
       <ul>
-        <li><b>Best case</b>: everything about the flash is known exactly and only sensor noise is random. The ideal test is right with probability Φ(d′/2), where d′ is the noise-weighted difference between the two images. Saturated pixels are left out. This is a bound, not a design target.</li>
-        <li><b>Realistic case</b>: every shot draws its own flash and glow brightness, flash size and duration, exposure timing, position on the pixel grid and which way the flash points in the image. The sensor measures total signal, how concentrated the light is, the flash length and width, how far the brightest point sits from the centre, and for fast sensors the time profile. A quadratic classifier is trained on half the simulated shots and scored on the other half. Only detected shots count.</li>
-        <li>The smallest angle is found by bisection over a fixed grid of angles. Results carry Monte Carlo noise of a few percent in the correct-call rate; use “600 shots” for final figures.</li>
+        <li><b>Best case</b>: everything about the flash is known exactly, the exposure is timed to catch the most light, and only sensor noise is random. The ideal test is right with probability Φ(d′/2), where d′ is the noise-weighted difference between the two images. Saturated pixels are left out. This is a bound, not a design target.</li>
+        <li><b>Realistic case</b>: every shot draws its own flash and glow brightness, flash size and duration, exposure timing, position on the pixel grid, which way the flash points in the image and, if set, the true range. The sensor measures total signal, how concentrated the light is, the flash length and width, how far the brightest point sits from the centre, and for fast sensors the time profile. A quadratic classifier is trained on half the simulated shots and scored on the other half. Only detected shots count.</li>
+        <li>Because the bullet hides the glow on the axis, the correct-call rate can rise and fall with angle inside the glow zone. Each result therefore gives the smallest angle above which every angle is told apart, plus any narrower bands below it that also pass (bars on the plots). Inside the glow zone the realistic case tests a fixed grid of seven angles; above it, the rate rises steadily and is searched by bisection. Results carry Monte Carlo noise of a few percent in the correct-call rate; use “600 shots” for final figures.</li>
       </ul>
       <h3>Ballistics</h3>
       <ul>
@@ -2414,7 +2698,7 @@ td.num { white-space: nowrap; }
       </ul>
       <h3>Not modelled</h3>
       <ul>
-        <li>False alarms (sun glints, fires, other weapons), turbulence, wind, moving shooters, flash hiders, unknown range (raise the brightness variation to stand in for it), and the 4.3 µm CO₂ band's extra loss over distance.</li>
+        <li>False alarms (sun glints, fires, other weapons), turbulence, wind, moving shooters, flash hiders, a separate small glow at the muzzle itself, observers off to the side of the barrel (the bullet-block geometry assumes below), the bullet's track in flight, and the 4.3 µm CO₂ band's extra loss over distance. Unknown range is optional (Study settings).</li>
       </ul>
       <h3>Sources</h3>
       <ul>
@@ -2429,30 +2713,33 @@ td.num { white-space: nowrap; }
   // ------------------------------------------------------------------ exports
   function mainCsv() {
     const res = state.results; if (!res) return null;
-    const rows = [['sensor', 'range_m', 'case', 'min_angle_deg', 'status', 'miss_distance_m', 'detection_probability', 'best_case_peak_snr', 'best_case_saturated']];
+    const rows = [['sensor', 'range_m', 'case', 'min_angle_deg', 'status', 'miss_distance_m', 'detection_probability', 'best_case_peak_snr', 'best_case_saturated', 'also_told_apart_deg']];
+    const wcol = r => (r.windows || []).map(w => (w[2] ? '<' : '') + w[0].toPrecision(3) + '-' + w[1].toPrecision(3)).join(' ');
     state.sensors.forEach((s, si) => RANGES.forEach((R, ri) => {
       const b = res.best[si][ri], r = res.real[si][ri];
-      if (b) rows.push([s.short, R, 'best', b.value != null ? b.value.toPrecision(4) : '', b.flag || 'ok', b.value != null ? (R * Math.tan(b.value * D)).toPrecision(4) : '', '', b.peakSNR.toPrecision(4), b.saturated ? 'yes' : 'no']);
-      if (r) rows.push([s.short, R, 'realistic', r.value != null ? r.value.toPrecision(4) : '', r.flag || 'ok', r.value != null ? (R * Math.tan(r.value * D)).toPrecision(4) : '', r.pd != null ? r.pd.toFixed(3) : '', '', '']);
+      if (b) rows.push([s.short, R, 'best', b.value != null ? b.value.toPrecision(4) : '', b.flag || 'ok', b.value != null ? (R * Math.tan(b.value * D)).toPrecision(4) : '', '', b.peakSNR.toPrecision(4), b.saturated ? 'yes' : 'no', wcol(b)]);
+      if (r) rows.push([s.short, R, 'realistic', r.value != null ? r.value.toPrecision(4) : '', r.flag || 'ok', r.value != null ? (R * Math.tan(r.value * D)).toPrecision(4) : '', r.pd != null ? r.pd.toFixed(3) : '', '', '', wcol(r)]);
     }));
     return csvWithHeader(rows);
   }
   function sweepCsv() {
     const res = state.results; if (!res) return null;
-    const rows = [['sensor', 'range_m', 'glow_peak_W_sr', 'case', 'min_angle_deg', 'status', 'detection_probability']];
+    const rows = [['sensor', 'range_m', 'glow_peak_W_sr', 'case', 'min_angle_deg', 'status', 'detection_probability', 'also_told_apart_deg']];
+    const wcol = r => (r.windows || []).map(w => (w[2] ? '<' : '') + w[0].toPrecision(3) + '-' + w[1].toPrecision(3)).join(' ');
     state.sensors.forEach((s, si) => SWEEP.forEach((gv, gi) => {
       const b = res.sweepBest[si][gi], r = res.sweepReal[si][gi];
-      if (b) rows.push([s.short, res.sweepRange, gv, 'best', b.value != null ? b.value.toPrecision(4) : '', b.flag || 'ok', '']);
-      if (r) rows.push([s.short, res.sweepRange, gv, 'realistic', r.value != null ? r.value.toPrecision(4) : '', r.flag || 'ok', r.pd != null ? r.pd.toFixed(3) : '']);
+      if (b) rows.push([s.short, res.sweepRange, gv, 'best', b.value != null ? b.value.toPrecision(4) : '', b.flag || 'ok', '', wcol(b)]);
+      if (r) rows.push([s.short, res.sweepRange, gv, 'realistic', r.value != null ? r.value.toPrecision(4) : '', r.flag || 'ok', r.pd != null ? r.pd.toFixed(3) : '', wcol(r)]);
     }));
     return csvWithHeader(rows);
   }
   function balCsv() {
     const tab = ballistics(), ammo = state.p.study.ammo;
-    const rows = [['range_m', 'M80_tof_s', 'M80_speed_m_s', 'M80_mach', 'M80_barrel_above_target_deg', 'M118LR_tof_s', 'M118LR_speed_m_s', 'M118LR_mach', 'M118LR_barrel_above_target_deg', 'sound_arrival_s', ...state.sensors.map(s => `warning_${s.id}_${ammo}_s`)]];
+    const rows = [['range_m', 'M80_tof_s', 'M80_speed_m_s', 'M80_mach', 'M80_barrel_above_target_deg', 'M118LR_tof_s', 'M118LR_speed_m_s', 'M118LR_mach', 'M118LR_barrel_above_target_deg', 'sound_arrival_s', ...state.sensors.map(s => `warning_${s.id}_${ammo}_s`), `target_bullet_clears_ms_${ammo}`, `target_glow_share_${ammo}`]];
     BAL_RANGES.forEach((R, i) => {
       const a = tab.M80[i], b = tab.M118LR[i];
-      rows.push([R, a.tof.toFixed(4), a.v.toFixed(1), a.mach.toFixed(3), a.superDeg.toFixed(4), b.tof.toFixed(4), b.v.toFixed(1), b.mach.toFixed(3), b.superDeg.toFixed(4), a.soundArrival.toFixed(4), ...state.sensors.map(s => warningTime(s, ammo, R).toFixed(4))]);
+      const tv = R >= 50 ? targetCache(R) : { clear: '', frac: '' };
+      rows.push([R, a.tof.toFixed(4), a.v.toFixed(1), a.mach.toFixed(3), a.superDeg.toFixed(4), b.tof.toFixed(4), b.v.toFixed(1), b.mach.toFixed(3), b.superDeg.toFixed(4), a.soundArrival.toFixed(4), ...state.sensors.map(s => warningTime(s, ammo, R).toFixed(4)), String(tv.clear).replace(' ms', ''), typeof tv.frac === 'number' ? tv.frac.toFixed(4) : '']);
     });
     return csvWithHeader(rows);
   }
@@ -2502,7 +2789,7 @@ td.num { white-space: nowrap; }
       g.textAlign = 'left'; g.font = `11px ${FONT_BODY}`; g.fillStyle = LIGHT.muted;
       g.fillText('Cyan: saturated pixel. Sensor captions: signal relative to 0°. True-flash captions: outline length:width.', 14, H - 30);
       g.fillText(settingsLines()[0], 14, H - 14);
-    }], W, H, `The flash at 0°, 2°, 5°, 20° and 90°, ${state.view.range} m`, 'Top row: true flash. Below: what each sensor records (exposure starting as the bullet leaves, brightest frame).');
+    }], W, H, `The flash at 0°, 2°, 5°, 20° and 90°, ${state.view.range} m`, 'Top row: true flash. Below: what each sensor records (exposure timed to catch the most light, brightest frame).');
     saveFile(`flash-angles-${state.view.range}m.png`, blob);
   }
   async function exportLive() {

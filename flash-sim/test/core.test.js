@@ -162,6 +162,7 @@ test('Realistic classifier: same angle on both sides gives chance accuracy', () 
 test('Realistic classifier: an obvious difference is detected when nothing varies shot to shot', () => {
   const p = C.defaultParams();
   p.glow.peak = 100;                  // glow comparable to the whole flash
+  p.glow.bulletBlock = false;         // dead-on sees the glow, 5 deg does not
   Object.assign(p.study, { flashVar: 0, glowVar: 0, shapeVar: 0, timeVar: 0 });
   const s = C.defaultSensors()[3];
   const ctx = C.makeContext(p, s, 300);
@@ -186,4 +187,53 @@ test('Ballistics: drag constant matches the standard G7 formulation and integrat
   const se = C.superelevation(ammo, 800);
   const hit = C.interpAtX(C.trajectory(ammo, se, 805), 800);
   assert.ok(Math.abs(hit.y) < 1e-3, 'superelevation hits the target');
+});
+
+test('Bullet blocking: geometry and timing', () => {
+  const p = C.defaultParams();
+  // no shadow reproduces the plain bore fraction, both glow models
+  for (const model of ['edge', 'column']) {
+    const gl = Object.assign({}, p.glow, { model });
+    for (const a of [0, 0.2, 0.5, 0.8, 2]) close(C.boreVisible(gl, a * D, 0, 0) + 1e-15, C.boreFraction(gl, a * D) + 1e-15, 1e-3, `${model} ${a}`);
+  }
+  // the bullet (7.82 mm) covers the 7.62 mm bore completely as it leaves
+  assert.equal(C.blockedFraction(p, 0.3 * D, 300, 0), 0);
+  // dead-on: only gravity moves it off the line of sight; clears when drop ~ bore radius + bullet radius
+  const t0 = C.clearTime(p, 0, 300, 0.99);
+  const est0 = Math.sqrt(2 * (p.glow.bore / 2 + p.glow.bulletDiameter / 2) / 9.80665);
+  close(t0, est0, 0.06, 'dead-on clear time');
+  // 0.3 deg: shadow edge passes the visible part's edge when x tan(th) ~ rb + r - barrel tan(th)
+  const th = 0.3 * D, need = p.glow.bulletDiameter / 2 + p.glow.bore / 2 - p.glow.barrel * Math.tan(th);
+  const est = need / Math.tan(th) / C.AMMO.M80.mv;
+  const t3 = C.clearTime(p, th, 300, 0.99);
+  assert.ok(t3 < est * 1.08 && t3 > est * 0.85, `0.3 deg clear ${t3} vs estimate ${est}`);
+  // clearing gets faster with angle, and blocking never adds light
+  let prev = Infinity;
+  for (const a of [0.05, 0.1, 0.2, 0.4, 0.7]) { const t = C.clearTime(p, a * D, 300, 0.99); assert.ok(t < prev); prev = t; }
+  const bt = C.blockTable(p, 0.2 * D, 300, 0.02);
+  const e = C.glowPulseBlocked(p.glow, 1, bt).G(10);
+  assert.ok(e > 0 && e < p.glow.decay);
+});
+
+test('Cloud gap: glow still crosses the whole cloud on the axis', () => {
+  const p = C.defaultParams();
+  for (const gap of [0, 0.1, 0.3]) close(C.glowCloudPath(Object.assign({}, p.flash, { gap }), 0), p.flash.length, 1e-9, 'gap ' + gap);
+  const g = C.plumeGeom(Object.assign({}, p.flash, { gap: 0.2 }), 90 * D);
+  close(g.uc, 0.35 + 0.2, 1e-12, 'cloud centre moves downrange');
+});
+
+test('With bullet blocking, the glow separates near-axis angles from dead-on, not 5 deg', () => {
+  const p = C.defaultParams();
+  p.glow.peak = 100;
+  Object.assign(p.study, { flashVar: 0, glowVar: 0, shapeVar: 0, timeVar: 0 });
+  const s = C.defaultSensors()[3];
+  const ctx = C.makeContext(p, s, 300);
+  const kind = C.featureKind(ctx);
+  const buf = C.makeBuf(ctx);
+  const a = runGen(C.collectShots(ctx, 0, 0, 200, 4, 1, buf, kind)).F;
+  const near = runGen(C.collectShots(ctx, 0.4, 1, 200, 4, 1, buf, kind)).F;
+  const far = runGen(C.collectShots(ctx, 5, 2, 200, 4, 1, buf, kind)).F;
+  const pNear = C.qdaPc(a, near), pFar = C.qdaPc(a, far);
+  assert.ok(pNear > 0.9, `0.4 deg vs dead-on: ${pNear}`);
+  assert.ok(pFar < pNear, `5 deg (${pFar}) should be harder than 0.4 deg (${pNear})`);
 });
