@@ -1,0 +1,306 @@
+<title>Muzzle Flash Aspect</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: range-test console. Settings rail on the left, the answer and its plots in the main column, the evidence (images, traces, ballistics) below. Same family as sim/. */
+:root {
+  --bg: #e9ece5;
+  --surface: #f7f8f4;
+  --surface-2: #dfe3d9;
+  --ink: #1a201b;
+  --muted: #586356;
+  --line: #c6cdc0;
+  --accent: #b86200;
+  --accent-ink: #ffffff;
+  --ok: #2e7d4f;
+  --warn: #a8700f;
+  --bad: #b3261e;
+  --view-bg: #0d100d;
+  --view-ink: #e6ebe1;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --sat: #2bb8d6;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111511; --surface: #191e19; --surface-2: #222922; --ink: #e1e7dc; --muted: #93a08f; --line: #2d362d;
+    --accent: #f0a23b; --accent-ink: #1a1408; --ok: #5cc48a; --warn: #e3b04b; --bad: #ef6b5e;
+    --view-bg: #080a08; --view-ink: #e6ebe1;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --sat: #3fc9e6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111511; --surface: #191e19; --surface-2: #222922; --ink: #e1e7dc; --muted: #93a08f; --line: #2d362d;
+  --accent: #f0a23b; --accent-ink: #1a1408; --ok: #5cc48a; --warn: #e3b04b; --bad: #ef6b5e;
+  --view-bg: #080a08; --view-ink: #e6ebe1;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --sat: #3fc9e6;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 56px;
+}
+.wrap { max-width: 1360px; margin: 0 auto; display: grid; gap: 24px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: 0.01em; }
+h1 { font-size: 30px; font-weight: 700; line-height: 1.15; }
+h2 { font-size: 21px; font-weight: 600; }
+h3 { font-size: 15px; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+a { color: var(--accent); }
+.eyebrow { font-family: var(--font-data); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.mono, .num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+header.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px 24px; padding-block: 24px 16px; border-bottom: 1px solid var(--line); }
+header.top .lede { color: var(--muted); max-width: 70ch; margin-top: 6px; }
+.status-strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 11.5px; padding: 3px 9px; border-radius: 3px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.chip.ok i { background: var(--ok); } .chip.warn i { background: var(--warn); } .chip.bad i { background: var(--bad); } .chip.run i { background: var(--accent); }
+
+.layout { display: grid; grid-template-columns: minmax(290px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 1020px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* settings rail */
+.rail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow-y: auto; padding-right: 4px; overscroll-behavior: contain; }
+@media (max-width: 1020px) { .rail { position: static; max-height: none; overflow: visible; order: 2; } .main { order: 1; } }
+details.group { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
+details.group > summary { list-style: none; cursor: pointer; padding: 10px 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-family: var(--font-display); font-weight: 600; font-size: 14.5px; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font-family: var(--font-data); color: var(--muted); }
+details.group[open] > summary::after { content: "–"; }
+details.group > summary .sub { font-family: var(--font-data); font-size: 11px; color: var(--muted); font-weight: 400; margin-left: auto; }
+.group-body { padding: 2px 12px 12px; display: grid; gap: 10px; }
+.ctl { display: grid; gap: 3px; }
+.ctl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ctl label { font-size: 13px; }
+.ctl .val { display: inline-flex; align-items: baseline; gap: 4px; }
+.ctl input[type="number"] { width: 78px; font-family: var(--font-data); font-size: 12.5px; padding: 2px 4px; text-align: right; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; }
+.ctl .unit { font-family: var(--font-data); font-size: 11px; color: var(--muted); min-width: 34px; }
+.ctl .hint { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+select, button { font: inherit; }
+select { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 3px 6px; font-size: 13px; width: 100%; min-width: 0; text-overflow: ellipsis; }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+.derived { font-family: var(--font-data); font-size: 11.5px; color: var(--muted); display: grid; grid-template-columns: auto auto; gap: 1px 10px; padding: 6px 8px; background: var(--surface-2); border-radius: 3px; }
+.derived b { color: var(--ink); font-weight: 500; text-align: right; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 3px 8px; border-radius: 3px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 5px 11px; border-radius: 3px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn[disabled] { opacity: 0.5; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* main column */
+.main { display: grid; gap: 28px; min-width: 0; }
+section.panel { display: grid; gap: 12px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 8px 16px; }
+.panel-head p { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px; min-width: 0; }
+.chart-box { position: relative; width: 100%; }
+.chart-box canvas { display: block; width: 100%; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; font-family: var(--font-data); font-size: 11.5px; line-height: 1.45; box-shadow: 0 2px 10px rgba(0,0,0,0.12); white-space: nowrap; z-index: 3; }
+.tip .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.tip .swatch { width: 9px; height: 3px; border-radius: 1px; }
+.note { font-size: 12.5px; color: var(--muted); max-width: 90ch; }
+
+/* answer block */
+.answer { display: grid; gap: 12px; }
+.answer-lead { font-size: 15.5px; max-width: 80ch; }
+.answer-lead strong { font-weight: 600; }
+.progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+.progress-label { font-family: var(--font-data); font-size: 11.5px; color: var(--muted); }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-data); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+td.num { white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--font-data); font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); white-space: nowrap; }
+.pill.bad { color: var(--bad); border-color: currentColor; } .pill.ok { color: var(--ok); border-color: currentColor; } .pill.warn { color: var(--warn); border-color: currentColor; }
+
+/* live view */
+.live { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 760px) { .live { grid-template-columns: minmax(0, 1fr); } }
+.viewer { background: var(--view-bg); border-radius: 4px; padding: 10px; display: grid; gap: 6px; color: var(--view-ink); min-width: 0; }
+.viewer canvas { width: 100%; height: auto; aspect-ratio: 1 / 1; image-rendering: pixelated; display: block; border-radius: 2px; }
+.viewer canvas.wide { aspect-ratio: 16 / 10; image-rendering: auto; }
+.viewer .cap { font-family: var(--font-data); font-size: 11px; color: #a9b3a5; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.readouts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; }
+.readout { display: grid; gap: 1px; }
+.readout .k { font-size: 11.5px; color: var(--muted); }
+.readout .v { font-family: var(--font-data); font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* angle strip */
+.strip-wrap { overflow-x: auto; }
+.strip { display: grid; grid-template-columns: 112px repeat(5, minmax(84px, 1fr)); gap: 6px; min-width: 560px; align-items: center; }
+.strip .hd { font-family: var(--font-data); font-size: 12px; text-align: center; color: var(--muted); }
+.strip .rowlab { font-size: 12px; line-height: 1.3; display: flex; gap: 6px; align-items: center; }
+.strip .cell { background: var(--view-bg); border-radius: 3px; padding: 4px; display: grid; gap: 3px; }
+.strip .cell canvas { width: 100%; aspect-ratio: 1 / 1; image-rendering: pixelated; display: block; }
+.strip .cell .c { font-family: var(--font-data); font-size: 10.5px; color: #a9b3a5; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); align-items: center; }
+.ramp { width: 120px; height: 9px; border-radius: 2px; display: inline-block; vertical-align: middle; }
+
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } }
+
+.notes { display: grid; gap: 10px; font-size: 13.5px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 95ch; }
+.notes h3 { margin-top: 6px; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 4px; font-size: 13px; z-index: 20; }
+@media (prefers-reduced-motion: reduce) { .progress > i { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">3–5 µm muzzle-flash study · 7.62×51 mm</div>
+      <h1>Muzzle Flash Aspect</h1>
+      <p class="lede">Can a small infrared sensor worn by a soldier tell, at the moment a rifle fires, whether the shot is aimed at them or somewhere nearby? Set up the flash, the hot gas in the barrel and the sensor, then read off the smallest angle off the barrel line each sensor can tell apart from dead-on.</p>
+    </div>
+    <div class="status-strip" id="chips"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" id="rail" aria-label="Settings"></aside>
+
+    <main class="main">
+      <section class="panel answer card" aria-labelledby="answer-h">
+        <div class="panel-head">
+          <div>
+            <div class="eyebrow" id="answer-eyebrow">Answer at 300 m</div>
+            <h2 id="answer-h">Smallest angle each sensor can tell apart from dead-on</h2>
+          </div>
+          <div class="tools"><button class="btn" id="run-btn" type="button">Run study again</button></div>
+        </div>
+        <div>
+          <div class="progress" aria-hidden="true"><i id="prog-bar"></i></div>
+          <div class="progress-label" id="prog-label" role="status">Starting…</div>
+        </div>
+        <p class="answer-lead" id="answer-lead"></p>
+        <div class="tbl-wrap"><table id="answer-table"></table></div>
+        <p class="note" id="answer-note"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="main-h">
+        <div class="panel-head">
+          <div>
+            <h2 id="main-h">Smallest distinguishable angle vs distance</h2>
+            <p>Solid lines: realistic case (everything about the flash varies from shot to shot, best possible processing). Dashed: best case (only sensor noise). Lower is better.</p>
+          </div>
+          <div class="tools">
+            <div class="seg" role="group" aria-label="Plot units">
+              <button type="button" id="mode-angle" aria-pressed="true">Angle</button>
+              <button type="button" id="mode-miss" aria-pressed="false">Miss distance</button>
+            </div>
+            <button class="btn" type="button" id="exp-main-png">PNG</button>
+            <button class="btn" type="button" id="exp-main-csv">CSV</button>
+          </div>
+        </div>
+        <div class="card"><div class="chart-box" id="chart-main"></div></div>
+        <p class="note">Top rows: “&gt; 90°” means the sensor cannot tell even a shot 90° off the barrel line from dead-on; “none” means it does not detect the flash at all. Hover or tap the plot for the numbers. The best-case lines jump where different pixels saturate.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="sweep-h">
+        <div class="panel-head">
+          <div>
+            <h2 id="sweep-h">Smallest angle vs barrel-glow brightness</h2>
+            <p id="sweep-sub">At 300 m. The glow is the only part of the signal that changes within a degree of the barrel line, and its brightness is the least certain number in the model.</p>
+          </div>
+          <div class="tools">
+            <button class="btn" type="button" id="exp-sweep-png">PNG</button>
+            <button class="btn" type="button" id="exp-sweep-csv">CSV</button>
+          </div>
+        </div>
+        <div class="card"><div class="chart-box" id="chart-sweep"></div></div>
+        <p class="note">Same rules as the plot above, with the glow brightness swept and everything else at the current settings. The glow is switched on for this plot even if it is off in the settings.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="live-h">
+        <div class="panel-head">
+          <div>
+            <h2 id="live-h">What the sensor sees</h2>
+            <p id="live-sub">One shot at the distance and angle set in the Scenario group.</p>
+          </div>
+          <div class="tools">
+            <button class="btn" type="button" id="fire-btn">Fire again</button>
+            <label class="toggle"><input type="checkbox" id="live-noise" checked> Noise</label>
+            <label class="toggle"><input type="checkbox" id="live-random" > Random timing</label>
+            <button class="btn" type="button" id="exp-live-png">PNG</button>
+            <button class="btn" type="button" id="exp-live-csv">CSV</button>
+          </div>
+        </div>
+        <div class="live">
+          <div class="viewer">
+            <div class="cap"><span>The flash itself (radiance, true shape)</span><span id="true-cap"></span></div>
+            <canvas id="true-canvas" width="440" height="440" style="image-rendering:auto"></canvas>
+          </div>
+          <div class="viewer">
+            <div class="cap"><span id="sens-title">Sensor image</span><span id="sens-cap"></span></div>
+            <canvas id="sens-canvas" width="320" height="320"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:6px">Signal over time</h3>
+          <div class="chart-box" id="chart-time"></div>
+        </div>
+        <div class="readouts card" id="readouts"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="strip-h">
+        <div class="panel-head">
+          <div>
+            <h2 id="strip-h">The flash at 0°, 2°, 5°, 20° and 90°</h2>
+            <p id="strip-sub">Top row: the true flash. Below: each sensor at the scenario distance, exposure starting as the bullet leaves.</p>
+          </div>
+          <div class="tools">
+            <label class="toggle"><input type="checkbox" id="strip-noise"> Noise</label>
+            <button class="btn" type="button" id="exp-strip-png">PNG</button>
+          </div>
+        </div>
+        <div class="card strip-wrap"><div class="strip" id="strip"></div></div>
+        <div class="legend-row" id="strip-legend"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="bal-h">
+        <div class="panel-head">
+          <div>
+            <h2 id="bal-h">Bullet flight time and warning</h2>
+            <p>7.62×51 mm, G7 drag model, sea-level standard air, no wind. The flash reaches the sensor in microseconds, so warning time is flight time minus the sensor's frame time and processing delay.</p>
+          </div>
+          <div class="tools">
+            <button class="btn" type="button" id="exp-bal-png">PNG</button>
+            <button class="btn" type="button" id="exp-bal-csv">CSV</button>
+          </div>
+        </div>
+        <div class="two">
+          <div class="card"><h3 style="margin-bottom:6px">Time until the bullet arrives</h3><div class="chart-box" id="chart-tof"></div></div>
+          <div class="card"><h3 style="margin-bottom:6px">How far the barrel points above the target</h3><div class="chart-box" id="chart-se"></div></div>
+        </div>
+        <div class="card tbl-wrap"><table id="bal-table"></table></div>
+      </section>
+
+      <section class="panel notes card" aria-labelledby="notes-h" id="notes"></section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script id="core-src">/*@CORE*/</script>
+<script>/*@APP*/</script>
